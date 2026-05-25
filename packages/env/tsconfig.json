@@ -1,0 +1,3 @@
+{
+  "extends": "@paperlens/config/tsconfig.base.json"
+}

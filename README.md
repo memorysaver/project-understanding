@@ -1,6 +1,6 @@
 # PaperLens
 
-*Read the latest research like it's your favorite blog.*
+_Read the latest research like it's your favorite blog._
 
 ## About
 
@@ -10,7 +10,7 @@ PaperLens is an AI-driven personal blog that continuously digests academic paper
 
 - Papers are dense, jargon-heavy, and time-consuming to read.
 - Aggregators surface volume, not understanding.
-- Existing summarizers feel generic — readers want a consistent *voice*, not a wall of bullet points.
+- Existing summarizers feel generic — readers want a consistent _voice_, not a wall of bullet points.
 
 PaperLens sits between the paper and the reader, doing the reading and the rewriting so the feed feels like something a single, thoughtful editor produces.
 
@@ -55,7 +55,7 @@ The reader-facing side of PaperLens looks and feels like a personal blog, not a 
 - Individual article pages with clean typography.
 - A link from every post back to the source paper for anyone who wants to go deeper.
 
-There is no search bar, no filter panel, no tag cloud at launch. The goal is for a reader to land on the feed and just *read*.
+There is no search bar, no filter panel, no tag cloud at launch. The goal is for a reader to land on the feed and just _read_.
 
 ## The curation console
 
@@ -65,7 +65,7 @@ The curation console is the private backend where you shape PaperLens's voice. I
 - Preview how a sample paper would be rewritten with the current prompt before publishing.
 - Maintain a small library of style presets to switch between.
 
-This is the lever that makes PaperLens feel like *yours* and not a generic summarizer.
+This is the lever that makes PaperLens feel like _yours_ and not a generic summarizer.
 
 ## Sources
 

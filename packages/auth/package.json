@@ -1,0 +1,24 @@
+{
+  "name": "@paperlens/auth",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {},
+  "dependencies": {
+    "@paperlens/db": "workspace:*",
+    "@paperlens/env": "workspace:*",
+    "better-auth": "catalog:",
+    "dotenv": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@paperlens/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}
