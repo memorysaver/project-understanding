@@ -1,0 +1,62 @@
+schema: spec-driven
+
+# Project context
+# Injected into every artifact prompt (proposal, design, specs, tasks)
+# via `openspec instructions`. Keep it focused — it is loaded every time.
+context: |
+  Product: PaperLens — an AI-driven personal blog that continuously digests
+  academic papers and republishes them as short, readable posts in a voice the
+  owner controls. Target reader: someone who wants to stay current with research
+  but does not have time to read papers end-to-end. The feed should feel like a
+  single thoughtful editor writes it, not like a generic summarizer.
+
+  Two surfaces:
+  - Reader-facing blog: chronological feed, clean article pages, link back to
+    the source paper. No search bar, no filter panel, no tag cloud at launch —
+    the goal is for a reader to land on the feed and just read.
+  - Curation Console (private backend): edit the active style prompt, preview
+    how a sample paper would be rewritten, maintain a small library of style
+    presets. This is the lever that makes PaperLens feel personal.
+
+  Agent pipeline (each stage has one job; stages communicate via structured
+  intermediates so any stage can be swapped without disturbing the others):
+  - Crawler — discovers new papers from configured sources, deduplicates by
+    paper ID or DOI. Knows nothing about content or style.
+  - Digestor — extracts a structured digest of contributions, methods, results.
+    The "what the paper says" layer, still unstyled.
+  - Stylist — rewrites the digest into a blog post using the active style
+    prompt from the Curation Console. This is where PaperLens's personality
+    lives.
+  - Publisher — renders the styled post into the feed with title, tags, and a
+    citation back to the original paper.
+  - Scheduler — orchestrates the pipeline on a recurring cadence and handles
+    retries when a stage fails.
+
+  Sources:
+  - Phase 1 (MVP): arxiv only.
+  - Later: OpenReview, ACL Anthology, bioRxiv. New sources plug in behind the
+    same Crawler interface so the rest of the pipeline does not change.
+
+  Roadmap:
+  - Phase 1 — arxiv MVP. End-to-end pipeline against arxiv, basic blog
+    frontend, Curation Console with a single active style prompt.
+  - Phase 2 — More sources. Pluggable crawlers for additional venues;
+    per-source tagging in the feed.
+  - Phase 3 — Personalization. Multi-prompt style library, topic-specific
+    voices, reader-side preferences (follow topics/authors, save articles).
+
+  Status: Early — defining product scope. README is the source of truth for
+  product intent; this file mirrors it for OpenSpec artifact generation.
+
+  Tech stack: not chosen yet. Treat tech-stack questions as open and surface
+  them in proposal/design rather than assuming.
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
