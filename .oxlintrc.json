@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["typescript", "unicorn", "oxc"],
+  "ignorePatterns": [".claude/skills/**", ".agents/skills/**", "skills-lock.json"],
   "categories": {
     "correctness": "error"
   },
