@@ -6,50 +6,59 @@ schema: spec-driven
 context: |
   Product: PaperLens — an AI-driven personal blog that continuously digests
   academic papers and republishes them as short, readable posts in a voice the
-  owner controls. Target reader: someone who wants to stay current with research
-  but does not have time to read papers end-to-end. The feed should feel like a
-  single thoughtful editor writes it, not like a generic summarizer.
+  owner controls. Primary user: the owner-curator (research-literate, runs their
+  own auto-maintained digest blog and is reader #1); readers are secondary. The
+  feed should feel like a single thoughtful editor writes it, not a generic
+  summarizer.
 
-  Two surfaces:
-  - Reader-facing blog: chronological feed, clean article pages, link back to
-    the source paper. No search bar, no filter panel, no tag cloud at launch —
-    the goal is for a reader to land on the feed and just read.
-  - Curation Console (private backend): edit the active style prompt, preview
-    how a sample paper would be rewritten, maintain a small library of style
-    presets. This is the lever that makes PaperLens feel personal.
+  CANONICAL CONTEXT — read these for any non-trivial proposal/design; do not
+  re-derive product facts from this summary:
+  - product/index.yaml — opportunity, personas, the two capabilities, and full
+    product framing (problem, goals, MVP boundary, activity backbone, layers
+    0-2, constraints, failure/security models, success criteria, quality
+    dimensions, decisions, stress test).
+  - product-context.yaml — architecture/system map, the 28-story graph, waves,
+    topology, layer gates, cost.
+  - docs/technical-spec.md — pipeline protocol, Paper state machine, failure
+    classes, trust boundaries, runtime bindings.
 
-  Agent pipeline (each stage has one job; stages communicate via structured
-  intermediates so any stage can be swapped without disturbing the others):
-  - Crawler — discovers new papers from configured sources, deduplicates by
-    paper ID or DOI. Knows nothing about content or style.
-  - Digestor — extracts a structured digest of contributions, methods, results.
-    The "what the paper says" layer, still unstyled.
-  - Stylist — rewrites the digest into a blog post using the active style
-    prompt from the Curation Console. This is where PaperLens's personality
-    lives.
-  - Publisher — renders the styled post into the feed with title, tags, and a
-    citation back to the original paper.
-  - Scheduler — orchestrates the pipeline on a recurring cadence and handles
-    retries when a stage fails.
+  Two capabilities / surfaces:
+  - reading (reader-facing blog): chronological feed, clean article pages, link
+    back to the source. No search bar, no filter panel, no tag cloud at launch.
+  - curation (private console, owner-only via Better Auth): edit the single
+    active style prompt and trigger ingestion runs; preview lands at Layer 1.5.
 
-  Sources:
-  - Phase 1 (MVP): arxiv only.
-  - Later: OpenReview, ACL Anthology, bioRxiv. New sources plug in behind the
-    same Crawler interface so the rest of the pipeline does not change.
+  Agent pipeline (each stage one job; stages communicate via durable D1
+  intermediates + Cloudflare Queue handoffs, so any stage is swappable and
+  retries are idempotent):
+  crawler (discover + dedup by arXiv id) -> digestor (full text -> structured
+  digest via LLM) -> stylist (rewrite in the active voice via LLM) -> publisher
+  (publish a Post: title, body, citation). An orchestrator coordinates; manual
+  "run now" at Layer 1, Cron scheduler at Layer 2.
 
-  Roadmap:
-  - Phase 1 — arxiv MVP. End-to-end pipeline against arxiv, basic blog
-    frontend, Curation Console with a single active style prompt.
-  - Phase 2 — More sources. Pluggable crawlers for additional venues;
-    per-source tagging in the feed.
-  - Phase 3 — Personalization. Multi-prompt style library, topic-specific
-    voices, reader-side preferences (follow topics/authors, save articles).
+  Tech stack — CHOSEN and scaffolded (better-t-stack monorepo). This supersedes
+  any "stack to be decided" assumption; do not treat stack as open:
+  - web: React 19 + Vite + TanStack Router
+  - server: Hono on Cloudflare Workers (also hosts Queue consumers + Cron)
+  - db: Cloudflare D1 via Drizzle (drizzle-orm/d1, bound as DB) — NOT Turso/LibSQL
+  - api: oRPC; auth: Better Auth (owner-only console); runtime: Bun + Turborepo
+  - LLM: OpenRouter (OpenAI-compatible) behind an `llm` module; models swappable
+    per stage via env. Deploy via Alchemy (IaC); there is no static wrangler.toml.
 
-  Status: Early — defining product scope. README is the source of truth for
-  product intent; this file mirrors it for OpenSpec artifact generation.
+  Key product decisions design must respect:
+  - MVP digests the FULL paper text (not abstract-only); prefer arXiv HTML/LaTeX
+    source and offload PDF binary extraction (do not parse PDFs inside a Worker).
+  - Auto-publish, with the owner able to unpublish/edit. A single active style
+    prompt in MVP (presets and topic-specific voices are Phase 3).
+  - arXiv is the only source in MVP (OpenReview/ACL/bioRxiv are Phase 2).
+  - Layer-0 faithfulness gate: <= 10% of a blind-graded sample contains a
+    hallucinated or unsupported claim.
 
-  Tech stack: not chosen yet. Treat tech-stack questions as open and surface
-  them in proposal/design rather than assuming.
+  Sources roadmap: Phase 1 (MVP) arxiv only; Phase 2 more venues behind the same
+  Crawler interface + per-source tagging; Phase 3 multi-prompt style library,
+  topic voices, reader preferences.
+
+  Status: product context built (/envision + /map complete); dispatch-ready.
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.
