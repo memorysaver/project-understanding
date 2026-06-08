@@ -1,13 +1,13 @@
 ---
 name: aep-launch
-description: Spawn an autonomous workspace session for feature implementation. Use after /design is complete, or when the user says "launch workspace", "start building", "spawn agent", "send it to build". Creates a git worktree on a feature branch, starts a Claude Code session in tmux/cmux, and optionally sets up a separate evaluator agent. Followed by /build (which runs autonomously in the workspace).
+description: Spawn an autonomous workspace agent for feature implementation. Use after /design is complete, or when the user says "launch workspace", "start building", "spawn agent", "send it to build". Creates a git worktree on a feature branch, starts the selected executor backend (Codex subagent-first, or Claude/generic tmux session), and optionally sets up a separate evaluator agent. Followed by /build (which runs autonomously in the workspace).
 ---
 
 # Launch
 
-Spawn an autonomous workspace session to implement a feature. Creates a git worktree on a fresh feature branch, bootstraps an implementation agent through the **executor abstraction** (`aep-executor`) — which picks the right backend for the current host (Claude Code or Codex; tmux/cmux, native subagent, or dynamic workflow) — and optionally sets up a separate evaluator agent for quality assurance.
+Spawn an autonomous workspace agent to implement a feature. Creates a git worktree on a fresh feature branch, bootstraps an implementation agent through the **executor abstraction** (`aep-executor`) — which picks the right backend for the current host (Codex subagent-first; Claude/generic tmux/cmux session; native fallback; or dynamic workflow) — and optionally sets up a separate evaluator agent for quality assurance.
 
-> **Host-agnostic:** This skill no longer hardwires `claude` + tmux + cmux. It delegates spawning and presentation to `aep-executor`, which detects the host and selects a backend (B1–B4). Read `.claude/skills/aep-executor/references/backends.md` before spawning. The recipes shown below are the **session backend (B1/B2)** path — the common case; the executor reference covers the native-subagent (B3) and dynamic-workflow (B4) paths.
+> **Host-agnostic:** This skill no longer hardwires `claude` + tmux + cmux. It delegates spawning and presentation to `aep-executor`, which detects the host and selects a backend (B1–B4). Read `.claude/skills/aep-executor/references/backends.md` before spawning. Codex coding launches select the worktree-bound native subagent path (B3) even when tmux exists. The recipes shown below are the **session backend (B1/B2)** path for Claude/generic hosts; the executor reference covers the Codex/native-subagent (B3) and dynamic-workflow (B4) paths.
 
 **Where this fits:**
 
@@ -18,7 +18,7 @@ Spawn an autonomous workspace session to implement a feature. Creates a git work
 
 **Session:** Main session, automated
 **Input:** OpenSpec change name (from `/design` or `/dispatch` for well-specified stories)
-**Output:** Running workspace session with bootstrapped agent + optional evaluator
+**Output:** Running workspace agent with bootstrapped build + optional evaluator
 
 ---
 
@@ -93,12 +93,19 @@ The branch deletion is gated on `ahead == 0` so live workspaces are never affect
 ### 1. Detect the backend
 
 Run the detection recipe from `.claude/skills/aep-executor/references/backends.md`
-and **announce the selection** (e.g. "tmux + cmux present → session backend B1").
+and **announce the selection** (e.g. "Codex host → native subagent backend B3"
+or "tmux + cmux present → session backend B1").
 If the user said "…with workflow" and the host is Claude Code, select B4 and
 follow the dynamic-workflow recipe in the executor reference instead of the steps
 below.
 
 ### 2. Spawn (session backend B1/B2 recipe)
+
+Use this block only when detection selects B1/B2. If detection selects Codex B3,
+still create the same AEP worktree, then spawn the Codex worker/subagent from the
+executor reference with an explicit contract to operate only inside
+`.feature-workspaces/<name>/`. B3 has no live tmux monitor and no mid-flight
+`nudge()`; progress is through signals plus the final result/PR state.
 
 ```bash
 # Create the git worktree on a fresh feature branch (outside .claude/ to avoid sensitive path protection)
@@ -106,27 +113,21 @@ mkdir -p .feature-workspaces
 git worktree add -b feat/<name> .feature-workspaces/<name> main
 
 # Start the implementation agent in a tmux session. $EXECUTOR is the INTERACTIVE
-# session command from detect():
-#   claude → "claude --dangerously-skip-permissions"            (interactive; NO -p, NO --rc)
-#   codex  → "codex --dangerously-bypass-approvals-and-sandbox" (interactive TUI; NOT `codex exec`)
+# session command from detect() for B1/B2:
+#   claude  → "claude --dangerously-skip-permissions" (interactive; NO -p, NO --rc)
+#   generic → "$AEP_EXECUTOR"                         (interactive session command)
 [ -z "$EXECUTOR" ] && { echo "run detect() first — \$EXECUTOR unset (would launch a bare shell)"; exit 1; }
 tmux new-session -d -s <name> -c .feature-workspaces/<name> "$EXECUTOR"
 
-# cmux is OPTIONAL — only create a tab if we are actually INSIDE a cmux surface.
-# (Merely having cmux installed does not let us spawn a sibling tab → would fail.)
-if [ -n "$CMUX_SOCKET" ]; then
-  GEN_SURFACE=$(cmux new-surface --type terminal | grep -o 'surface:[0-9]*')   # B1
-  cmux send --surface "$GEN_SURFACE" "tmux attach -t <name>\n"
-  cmux rename-tab --surface "$GEN_SURFACE" "<name>"
-else
-  echo "No cmux surface — workspace runs in tmux session '<name>'. Watch it: tmux attach -t <name>"  # B2
-fi
+# cmux is OPTIONAL and is attached LATER — after the bootstrap is sent. Attaching a
+# cmux surface focuses the tmux composer and blocks external send-keys, so the
+# prompt must land first. See "Attach the cmux Review Tab" after Send Bootstrap.
 ```
 
-> **No tmux at all (Desktop → B3) / dynamic workflow (B4):** do **not** use the
-> block above. Follow the B3/B4 `spawn()` recipe in the executor reference. For
-> B3, tell the user up front: the build runs to completion with no live monitor
-> or mid-flight feedback in this host.
+> **Codex host (B3) / no tmux fallback (B3) / dynamic workflow (B4):** do **not**
+> start a tmux session. Follow the B3/B4 `spawn()` recipe in the executor
+> reference. For B3, tell the user up front: the build runs to completion with no
+> live monitor or mid-flight feedback in this host.
 
 Replace `<name>` with a short feature name (e.g., `add-auth`). The branch will be `feat/add-auth`.
 
@@ -140,7 +141,8 @@ Replace `<name>` with a short feature name (e.g., `add-auth`). The branch will b
 
 **Session backends (B1/B2):** wait for the agent to fully initialize, then send
 the bootstrap instruction. The ready signal is executor-specific: Claude Code
-shows a `❯` prompt; the Codex TUI has no `❯`, so fall back to a short timed wait.
+shows a `❯` prompt; generic executors may use a timed wait if no readiness glyph
+is configured.
 **For B3 (native subagent):** the bootstrap text _is_ the subagent's initial
 prompt — pass it at `spawn()` time, there is no separate send step. **For B4
 (workflow):** the bootstrap text goes into the build agent's prompt in the
@@ -149,13 +151,13 @@ workflow script.
 > **Skill prefix:** If your project syncs skills with a prefix (e.g., `aep-`), replace `/build` with the prefixed name (e.g., `/aep-build`). Check how the build skill is registered in your project's `.claude/skills/` directory.
 
 ```bash
-# Wait for readiness. $READY_GREP comes from detect() ('❯' for claude, empty for codex).
+# Wait for readiness. $READY_GREP comes from detect() ('❯' for claude, empty for generic).
 if [ -n "$READY_GREP" ]; then
   for _ in $(seq 1 12); do
     tmux capture-pane -t <name>:0 -p -S -5 | grep -q "$READY_GREP" && { echo "ready"; break; }; sleep 2
   done
 else
-  sleep 8   # codex TUI has no ❯ glyph — give the composer time to come up
+  sleep 8   # no readiness glyph configured — give the composer time to come up
 fi
 ```
 
@@ -180,15 +182,43 @@ PROMPT="/build execute implementation for openspec change <change-name>. Read th
 <relevant lessons summary, if any — omit this section if no lessons exist>
 "
 
-if [ -n "$GEN_SURFACE" ]; then
-  cmux send --surface "$GEN_SURFACE" "$PROMPT"        # B1 (cmux sends the whole string)
-else
-  # B2: -l sends the literal multi-line text; a separate Enter submits it ONCE.
-  # (A bare `send-keys "$PROMPT" Enter` would let embedded newlines submit it line-by-line.)
-  tmux send-keys -t <name>:0.0 -l -- "$PROMPT"
-  tmux send-keys -t <name>:0.0 Enter
-fi
+# B1/B2: send the bootstrap over tmux BEFORE any cmux tab attaches (a cmux surface
+# focuses the composer and blocks external send-keys, so it must land first). -l
+# sends the literal multi-line text; a separate Enter submits it ONCE. (A bare
+# `send-keys "$PROMPT" Enter` would let embedded newlines submit it line-by-line.)
+# A very large paste can collapse to a "paste again to expand" prompt — if so, a
+# second Enter submits it.
+tmux send-keys -t <name>:0.0 -l -- "$PROMPT"
+tmux send-keys -t <name>:0.0 Enter
 # B3/B4: $PROMPT was passed as the agent's initial prompt at spawn() — nothing to send here.
+```
+
+---
+
+## Attach the cmux Review Tab (B1)
+
+**Only after the bootstrap has been sent.** On a cmux host (detection set
+`PRESENT=cmux`), open a review tab as a **sibling in the pane that holds the
+orchestrator's own tab** — not `cmux new-workspace` (which makes a separate
+top-level workspace) and not a bare `cmux new-surface` (which defaults to an unset
+`$CMUX_WORKSPACE_ID`). `cmux tree` marks the orchestrator's tab `◀ here`; fall back
+to the surface env vars when inside one. Skip this entire step under B2/B3/B4.
+
+```bash
+# $CMUX is the cmux CLI path resolved in detect().
+read -r WS PANE < <("$CMUX" tree 2>/dev/null | awk '
+  /workspace workspace:/ {for (i=1;i<=NF;i++) if ($i ~ /^workspace:/) ws=$i}
+  /pane pane:/           {for (i=1;i<=NF;i++) if ($i ~ /^pane:/)      pane=$i}
+  /◀ here/               {print ws, pane; exit}')
+: "${WS:=$CMUX_WORKSPACE_ID}" "${PANE:=$CMUX_PANE_ID}"
+if [ -n "$PANE" ]; then                                  # genuine B1 — a target pane exists
+  SREF=$("$CMUX" new-surface --type terminal --workspace "$WS" --pane "$PANE" --focus true \
+         | grep -oE 'surface:[0-9]+' | head -1)
+  "$CMUX" send --surface "$SREF" "tmux attach -t <name>"$'\n'   # trailing newline submits
+  "$CMUX" rename-tab --surface "$SREF" "<name>"
+else                                                     # reachable but no pane → headless B2
+  echo "cmux reachable but no target pane — workspace runs headless: tmux attach -t <name>"
+fi
 ```
 
 ---

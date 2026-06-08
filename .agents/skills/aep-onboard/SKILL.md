@@ -31,27 +31,29 @@ Before installing tools, get the mental model. AEP is not a "command runner" —
 
 ## Phase 1 — Install the Plugin
 
-Add the marketplace and install both plugin groups:
+Install the AEP skills with the [`skills`](https://github.com/vercel-labs/skills) CLI at **project level**, once per agent your project uses. Pin to the latest release and commit the installed files so the version is frozen for your team:
 
 ```bash
-# Add the marketplace
-/plugin marketplace add memorysaver/agentic-engineering-patterns
-
-# Install plugin groups
-/plugin install product-context@agentic-engineering-patterns
-/plugin install project-setup@agentic-engineering-patterns
-/plugin install agentic-development-workflow@agentic-engineering-patterns
+# Claude Code (repeat with `-a codex` for Codex). Newest tag:
+# https://github.com/memorysaver/agentic-engineering-patterns/releases/latest
+npx skills add memorysaver/agentic-engineering-patterns@<latest-tag> -a claude-code --skill '*' -y
 ```
 
-### Plugin Groups
+This installs every AEP skill (the `aep-*` names) plus a `skills-lock.json` manifest — **commit both**. For the full pinning + formatter guidance, see [Installing Skills](../../../README.md#installing-skills).
 
-| Group                            | Skills                               | Purpose                                                                      |
-| -------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------- |
-| **product-context**              | envision, map, dispatch, reflect     | Product-level planning and iteration                                         |
-| **project-setup**                | onboard, scaffold                    | Scaffold projects, configure spec-driven development, environment onboarding |
-| **agentic-development-workflow** | design, launch, build, wrap, git-ref | Full-lifecycle feature development with git worktrees                        |
+### Optional add-ons — always ask the user
 
-> **Note:** This installs the agentic-engineering-patterns plugin itself. Recommended third-party plugins are configured at the project level in Phase 4 via `.claude/settings.json`; browser automation is added only after its local smoke test passes.
+AEP pairs with two project-level skills from [`memorysaver/skills`](https://github.com/memorysaver/skills). **Ask the user whether they want each**, and install only what they choose (newest tag at <https://github.com/memorysaver/skills/releases/latest>, once per agent):
+
+- **Behavioral guidelines in `AGENTS.md`?** → install `project-behavior`, then run it to scaffold/extend `AGENTS.md`.
+- **A project memory system (committed lessons + recall)?** → install `project-memory` (and `memory-forge`), run `project-memory` to bootstrap `project-memory/`, then add a concise `## Memory & Learning Loop` section to `AGENTS.md` that **layers** these onto AEP's native lessons loop instead of duplicating it. AEP already captures (`/build` → `.dev-workflow/lessons.md`), archives (`/wrap` → `lessons-learned/`), and recalls (`/launch`); the supplement adds: `project-memory` recall at `/dispatch` + persisting the archived lesson at `/wrap` (qmd semantic recall), and `memory-forge` distilling settled lessons (≥7 days, ≥3 accrued) into skills at `/reflect` / pre-PR.
+
+```bash
+npx skills add memorysaver/skills@<latest-tag> -a claude-code \
+  --skill project-behavior --skill project-memory --skill memory-forge -y
+```
+
+> **Note:** This installs the AEP skills themselves. Recommended third-party Claude Code plugins are configured at the project level in Phase 4 via `.claude/settings.json`; browser automation is added only after its local smoke test passes.
 
 ---
 
@@ -79,15 +81,15 @@ which tmux >/dev/null 2>&1 && echo "OK ($(which tmux))" || echo "MISSING (recomm
 
 Install any missing tools:
 
-| Tool       | Purpose                            | Install                                          |
-| ---------- | ---------------------------------- | ------------------------------------------------ |
-| `git`      | Version control + worktrees        | `xcode-select --install` (macOS)                 |
-| `bun`      | Package manager & runtime          | `curl -fsSL https://bun.sh/install \| bash`      |
-| `claude`   | Executor: Claude Code CLI          | `npm install -g @anthropic-ai/claude-code`       |
-| `codex`    | Executor: OpenAI Codex CLI         | `npm install -g @openai/codex` _(alt to claude)_ |
-| `gh`       | GitHub CLI for PRs                 | `brew install gh`                                |
-| `openspec` | Spec-driven development            | `bun add -g openspec`                            |
-| `tmux`     | Terminal multiplexer (recommended) | `brew install tmux`                              |
+| Tool       | Purpose                                 | Install                                          |
+| ---------- | --------------------------------------- | ------------------------------------------------ |
+| `git`      | Version control + worktrees             | `xcode-select --install` (macOS)                 |
+| `bun`      | Package manager & runtime               | `curl -fsSL https://bun.sh/install \| bash`      |
+| `claude`   | Executor: Claude Code CLI               | `npm install -g @anthropic-ai/claude-code`       |
+| `codex`    | Executor: OpenAI Codex CLI              | `npm install -g @openai/codex` _(alt to claude)_ |
+| `gh`       | GitHub CLI for PRs                      | `brew install gh`                                |
+| `openspec` | Spec-driven development (Node >= 20.19) | `npm install -g @fission-ai/openspec@latest`     |
+| `tmux`     | Terminal multiplexer (recommended)      | `brew install tmux`                              |
 
 All **required** tools (executor + `bun`/`git`/`gh`/`openspec`) must show OK
 before proceeding. You need **at least one executor** (claude or codex) — not
