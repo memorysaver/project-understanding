@@ -6,7 +6,7 @@
 # status via .dev-workflow/signals/.
 schema: v1
 project: PaperLens
-version: "0.1.0"
+version: "0.2.0"
 updated_at: "2026-06-08T03:21:36Z"
 dispatch_epoch: 0
 
@@ -21,12 +21,1253 @@ calibration:
       trigger: "The Curation Console exists and several posts have been published in the owner's voice."
   history: []
 
-# ─── OPERATIONAL SECTIONS (populated by /map) ────────────────
-architecture: null
-stories: []
-waves: []
-topology: null
-layer_gates: []
+# ─── ARCHITECTURE (/map Step 1) ──────────────────────────────
+architecture:
+  style: "Serverless modular monolith on Cloudflare Workers; pipeline stages decoupled via Cloudflare Queues + durable D1 intermediates."
+  overview: "The web UI (reader + console) calls a Hono Worker over oRPC; the Worker also hosts Queue consumers and a Cron handler. The ingestion pipeline (crawler -> digestor -> stylist -> publisher) is coordinated by an orchestrator using Queues for stage handoffs and D1 for durable per-stage state, so stages are swappable and retries idempotent. An llm module wraps OpenRouter so models swap per stage."
+  technical_spec: "docs/technical-spec.md"
+  modules:
+    - name: db
+      responsibility: "Cloudflare D1 schema, migrations, and typed Drizzle accessors for all entities."
+      does_not: "Contain business or pipeline logic."
+      owns: ["All persisted entities (Paper, Digest, StylePrompt, Post, Run, auth tables)"]
+      depends_on: []
+      technology: "Drizzle ORM on Cloudflare D1"
+      key_concepts: ["Paper state machine", "arxiv_id dedup key", "single active StylePrompt"]
+    - name: llm
+      responsibility: "Thin OpenRouter (OpenAI-compatible) client; per-stage model config from env; structured-output + usage reporting."
+      does_not: "Contain digest/style business logic."
+      owns: ["LLM provider integration boundary"]
+      depends_on: ["env"]
+      technology: "OpenAI-compatible client pointed at OpenRouter"
+      key_concepts: ["per-stage model selection", "structured output", "token usage for cost"]
+    - name: crawler
+      responsibility: "Discover new arXiv papers, dedup by arxiv_id, persist Paper metadata + source URLs."
+      does_not: "Fetch full text, digest, or style."
+      owns: ["Paper discovery + dedup"]
+      depends_on: ["db"]
+      technology: null
+      key_concepts: ["arXiv API/Atom", "rate limiting (~1 req/3s)", "ON CONFLICT DO NOTHING"]
+    - name: digestor
+      responsibility: "Fetch full paper text (arXiv HTML/LaTeX source; offload PDF) and produce a structured Digest via the llm module."
+      does_not: "Apply any voice/style; decide publish state."
+      owns: ["Digest records"]
+      depends_on: ["db", "llm"]
+      technology: null
+      key_concepts: ["full-text fetch", "structured digest (contributions/methods/results)"]
+    - name: stylist
+      responsibility: "Rewrite a Digest into a styled post body using the active StylePrompt via the llm module."
+      does_not: "Fetch papers; persist the final Post or decide its state."
+      owns: ["Styled body generation"]
+      depends_on: ["db", "llm"]
+      technology: null
+      key_concepts: ["active StylePrompt", "voice consistency"]
+    - name: publisher
+      responsibility: "Assemble and persist a Post (title, body, citation, link) and manage publish/unpublish state."
+      does_not: "Generate content."
+      owns: ["Post lifecycle/state"]
+      depends_on: ["db"]
+      technology: null
+      key_concepts: ["Post status (published/unpublished/draft)", "citation"]
+    - name: orchestrator
+      responsibility: "Coordinate the pipeline: Queue handoffs, Paper state machine, manual run trigger (L1), Cron producer (L2), retries."
+      does_not: "Implement individual stage logic."
+      owns: ["Run/job state", "pipeline state transitions"]
+      depends_on: ["db", "crawler", "digestor", "stylist", "publisher"]
+      technology: "Cloudflare Queues + Cron Triggers"
+      key_concepts: ["one message per (paper, stage)", "idempotent stages", "resume-from-stage"]
+    - name: api
+      responsibility: "oRPC routers: reader queries (public) and console mutations (auth-gated)."
+      does_not: "Run pipeline work or render UI."
+      owns: ["RPC contract"]
+      depends_on: ["db", "auth", "orchestrator"]
+      technology: "oRPC"
+      key_concepts: ["public vs auth-gated procedures", "no unpublished content leaks"]
+    - name: auth
+      responsibility: "Better Auth — owner authentication for the console."
+      does_not: "Gate the reader side."
+      owns: ["Sessions"]
+      depends_on: ["db"]
+      technology: "Better Auth"
+      key_concepts: ["owner-only console", "cross-subdomain cookie config"]
+    - name: web
+      responsibility: "React UI: reader surface (feed + article, public) and console surface (prompt editor, run-now, auth-gated)."
+      does_not: "Contain backend logic."
+      owns: ["UI"]
+      depends_on: ["api", "auth"]
+      technology: "React 19 + Vite + TanStack Router"
+      key_concepts: ["reader feed/article", "console prompt editor"]
+    - name: server
+      responsibility: "Hono Worker host: wires oRPC + auth + Queue consumers + Cron handler; owns runtime bindings."
+      does_not: "Contain domain logic."
+      owns: ["Runtime bindings (D1, Queues, Cron, secrets)"]
+      depends_on: ["api", "auth", "orchestrator"]
+      technology: "Hono on Cloudflare Workers"
+      key_concepts: ["fetch handler", "queue() consumer", "scheduled() cron handler"]
+  domain_model:
+    - name: Paper
+      purpose: "A source paper discovered from arXiv that flows through the pipeline."
+      fields:
+        - name: arxiv_id
+          type: string
+          default: null
+          required: true
+          notes: "Primary/UNIQUE key; the dedup key."
+        - name: status
+          type: enum
+          default: discovered
+          required: true
+          notes: "discovered | digested | styled | published | failed (see state machine)."
+      normalization_rules: ["arxiv_id stored canonical (e.g. 2401.01234)"]
+      invariants: ["A published Paper has a corresponding published Post."]
+    - name: StylePrompt
+      purpose: "The prompt that defines PaperLens's voice; the Stylist uses the active one."
+      fields:
+        - name: id
+          type: string
+          default: null
+          required: true
+          notes: "Stable id."
+        - name: is_active
+          type: boolean
+          default: false
+          required: true
+          notes: "Exactly one row is active in MVP; updating active is a transactional flip."
+      normalization_rules: []
+      invariants: ["Exactly one StylePrompt has is_active = true."]
+    - name: Post
+      purpose: "A published blog post derived from a Paper's digest, in the owner's voice."
+      fields:
+        - name: id
+          type: string
+          default: null
+          required: true
+          notes: "Stable id."
+        - name: status
+          type: enum
+          default: draft
+          required: true
+          notes: "published | unpublished | draft."
+        - name: tags
+          type: json
+          default: null
+          required: false
+          notes: "Null at Layer 0; added at Layer 2."
+      normalization_rules: []
+      invariants: ["A published Post has a non-null published_at."]
+  protocol_sequences:
+    - name: ingest-pipeline
+      participants: ["orchestrator", "crawler", "digestor", "stylist", "publisher"]
+      trigger: "Manual run (L1) or Cron (L2) calls orchestrator.enqueueDiscovery."
+      steps:
+        - sender: orchestrator
+          message_type: "discover"
+          timeout_ms: 30000
+          payload_example: '{"type":"discover","runId":"r1"}'
+        - sender: crawler
+          message_type: "digest"
+          timeout_ms: 60000
+          payload_example: '{"type":"digest","arxiv_id":"2401.01234","runId":"r1"}'
+        - sender: digestor
+          message_type: "style"
+          timeout_ms: 60000
+          payload_example: '{"type":"style","arxiv_id":"2401.01234","runId":"r1"}'
+        - sender: stylist
+          message_type: "publish"
+          timeout_ms: 30000
+          payload_example: '{"type":"publish","arxiv_id":"2401.01234","runId":"r1"}'
+      error_behavior: "After max_retries on a stage, set Paper status=failed, record failure, escalate per failure class."
+      timeout_behavior: "Stage throws on budget exceed; Queue redelivers with backoff from the last good intermediate."
+  interfaces:
+    - from: web
+      to: api
+      protocol: "oRPC over HTTP"
+      endpoint: "listPosts, getPost (public); getActivePrompt, updateActivePrompt, triggerRun, setPostStatus, previewRewrite (auth)"
+      request: {}
+      response: {}
+      errors:
+        - code: 401
+          meaning: "Unauthorized console call"
+        - code: 404
+          meaning: "Post not found / not published"
+      sla: null
+    - from: api
+      to: orchestrator
+      protocol: "function call"
+      endpoint: "enqueueDiscovery(trigger)"
+      request: {}
+      response: {}
+      errors: []
+      sla: null
+    - from: orchestrator
+      to: digestor
+      protocol: "message queue"
+      endpoint: "pipeline queue message { type, arxiv_id, runId }"
+      request: {}
+      response: {}
+      errors: []
+      sla: null
+    - from: digestor
+      to: llm
+      protocol: "function call"
+      endpoint: "llm.complete({ stage, messages, schema? })"
+      request: {}
+      response: {}
+      errors:
+        - code: 502
+          meaning: "OpenRouter upstream failure -> retry with backoff"
+      sla: null
+    - from: crawler
+      to: db
+      protocol: "function call"
+      endpoint: "insert Paper ON CONFLICT DO NOTHING"
+      request: {}
+      response: {}
+      errors: []
+      sla: null
+  data_flows:
+    - journey: "Ingest to publish (owner)"
+      path: "trigger Run -> orchestrator -> crawler -> [queue] -> digestor -> [queue] -> stylist -> [queue] -> publisher -> Post published -> feed"
+    - journey: "Reading (reader, public)"
+      path: "web feed -> api.listPosts -> db; article -> api.getPost -> db"
+    - journey: "Curation (owner, auth)"
+      path: "web console -> api.getActivePrompt/updateActivePrompt -> db; api.triggerRun -> orchestrator"
+  third_party:
+    - name: arXiv
+      provides: "Paper discovery, metadata, and full text (HTML/LaTeX source preferred; PDF offloaded)."
+      integration_point: "crawler (discovery/metadata), digestor (full text)"
+      failure_mode: "Skip tick + retry next cadence; honor ~1 req/3s rate limit."
+    - name: OpenRouter
+      provides: "LLM inference via OpenAI-compatible API for digestor + stylist."
+      integration_point: "llm module"
+      failure_mode: "Backoff retry; leave Paper at current stage; escalate after N."
+  deployment:
+    environments: ["local", "production"]
+    module_runtime: { "server": "cloudflare-workers", "web": "cloudflare-static" }
+    persistence: { "all": "cloudflare-d1", "large_fulltext": "cloudflare-r2 (optional)" }
+  amendment_log: []
+  adrs:
+    - id: ADR-001
+      title: "Queue + durable-intermediate pipeline over in-process chaining"
+      context: "Cloudflare Workers cannot run the full crawl->digest->style->publish chain for many papers in one invocation (subrequest/stage limits)."
+      decision: "Coordinate stages via Cloudflare Queues with per-stage durable intermediates in D1; one LLM call per message."
+      reasoning: "Keeps each invocation within limits; makes retries idempotent and stages swappable."
+      consequences: "Enables scale + resilience; adds a queue/state-machine to build (deferred past the L0 inline skeleton)."
+    - id: ADR-002
+      title: "Isolate OpenRouter behind an llm module"
+      context: "Owner wants to vary models per stage via OpenRouter (OpenAI-compatible)."
+      decision: "A thin llm module wraps the OpenAI-compatible client; model per stage from env."
+      reasoning: "Swappable models, testable boundary, single place for usage/cost capture."
+      consequences: "Stages depend on llm, not on a provider SDK."
+    - id: ADR-003
+      title: "D1 for state, Queues for the job queue"
+      context: "D1 (SQLite) is single-writer and weak as a job queue under concurrent retries."
+      decision: "Use D1 for state/results (with arxiv_id UNIQUE dedup); use Cloudflare Queues for the job queue."
+      reasoning: "Queues give at-least-once delivery, retries, and DLQ for free."
+      consequences: "Two infra primitives, but clean separation of state vs work."
+
+# ─── STORIES (/map Steps 2-3) ────────────────────────────────
+stories:
+  # ── Layer 0: Walking Skeleton ──
+  - id: PL-001
+    title: "D1 domain schema + migrations (Paper, Digest, StylePrompt, Post, Run)"
+    layer: 0
+    module: db
+    activity: null
+    calibration_type: null
+    slice: 1
+    status: pending
+    priority: critical
+    business_value: 10
+    complexity: M
+    compile_mode: shared_enabler
+    change_group: null
+    dependencies: []
+    description:
+      what_changes: "Drizzle schema + D1 migrations exist for all core entities with the Paper state enum and arxiv_id dedup key."
+      why: "Every pipeline and surface story persists through these tables; foundation of Layer 0."
+    acceptance_criteria:
+      - "Migrations create papers, digests, style_prompts, posts, runs tables with documented fields."
+      - "papers.arxiv_id is UNIQUE/PK; inserting a duplicate is a no-op (ON CONFLICT DO NOTHING)."
+      - "A seed inserts exactly one active StylePrompt (the default voice)."
+    interface_obligations:
+      implements: ["db accessors for Paper/Digest/StylePrompt/Post/Run"]
+      consumes: []
+      contract_tests_required: false
+    files_affected: ["packages/db/src/schema/index.ts", "packages/db/src/schema/paperlens.ts", "packages/db/src/migrations/"]
+    technical_notes: "Cloudflare D1 (drizzle-orm/d1). Keep auth tables untouched."
+    verification:
+      unit: ["dedup no-op on duplicate arxiv_id", "single active StylePrompt invariant"]
+      integration: []
+      contract: []
+  - id: PL-002
+    title: "llm module: OpenRouter (OpenAI-compatible) client with per-stage model config"
+    layer: 0
+    module: llm
+    activity: null
+    calibration_type: null
+    slice: 1
+    status: pending
+    priority: critical
+    business_value: 9
+    complexity: S
+    compile_mode: shared_enabler
+    change_group: null
+    dependencies: []
+    description:
+      what_changes: "A complete() function calls OpenRouter via an OpenAI-compatible client, selecting the model per stage from env, supporting structured output, and returning token usage."
+      why: "Digestor and Stylist both need LLM access; isolating it enables per-stage model swaps and cost capture."
+    acceptance_criteria:
+      - "complete({stage, messages, schema?}) returns content/json + model + usage."
+      - "Model and base URL/key are read from env (per-stage override)."
+      - "On non-2xx, throws a typed error suitable for backoff retry."
+    interface_obligations:
+      implements: ["llm.complete"]
+      consumes: []
+      contract_tests_required: true
+    files_affected: ["packages/llm/src/index.ts", "packages/env/src/server.ts"]
+    technical_notes: "OpenAI-compatible base URL = OpenRouter. Do not hardcode a model."
+    verification:
+      unit: ["env-driven model selection", "structured-output parsing", "error on non-2xx"]
+      integration: []
+      contract: ["complete() shape"]
+  - id: PL-003
+    title: "Crawler: fetch an arXiv paper by ID and persist Paper (hardcoded source)"
+    layer: 0
+    module: crawler
+    activity: connect-source
+    calibration_type: null
+    slice: 2
+    status: pending
+    priority: critical
+    business_value: 8
+    complexity: M
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-001"]
+    description:
+      what_changes: "Given a hardcoded arXiv ID, fetch metadata + source URLs and persist a Paper(status=discovered)."
+      why: "First step of the walking skeleton; establishes the arXiv source connection."
+    acceptance_criteria:
+      - "Fetching a known arXiv ID persists a Paper with title, abstract, source_url, full_text_url."
+      - "Re-fetching the same ID does not create a duplicate."
+    interface_obligations:
+      implements: ["crawler.fetchById"]
+      consumes: ["db accessors"]
+      contract_tests_required: false
+    files_affected: ["packages/crawler/src/index.ts"]
+    technical_notes: "Respect arXiv rate limit + custom User-Agent."
+    verification:
+      unit: ["metadata mapping", "dedup on re-fetch"]
+      integration: ["fetch + persist a real/fixture arXiv ID"]
+      contract: []
+  - id: PL-004
+    title: "Digestor: fetch full text + produce structured Digest via llm"
+    layer: 0
+    module: digestor
+    activity: ingest-digest
+    calibration_type: null
+    slice: 2
+    status: pending
+    priority: critical
+    business_value: 10
+    complexity: L
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-001", "PL-002"]
+    description:
+      what_changes: "For a Paper, fetch full text (arXiv HTML/LaTeX source, abstract fallback) and produce a structured Digest (contributions/methods/results), persisted and linked to the Paper."
+      why: "The 'what the paper says' layer; core to the trust-without-reading bet."
+    acceptance_criteria:
+      - "Produces a Digest with contributions, methods, and results from full text."
+      - "Digest is persisted and Paper advances to status=digested."
+      - "On LLM failure, throws for retry and leaves Paper at status=discovered."
+    interface_obligations:
+      implements: ["digestor.run"]
+      consumes: ["llm.complete", "db accessors"]
+      contract_tests_required: true
+    files_affected: ["packages/digestor/src/index.ts"]
+    technical_notes: "Full-PDF binary parsing offloaded; prefer arXiv HTML source. See open_questions."
+    verification:
+      unit: ["digest schema validation", "status advance on success", "no advance on failure"]
+      integration: ["full-text fetch -> digest on a fixture paper"]
+      contract: ["Digest shape"]
+  - id: PL-005
+    title: "Stylist: rewrite Digest into a styled post body (default prompt) via llm"
+    layer: 0
+    module: stylist
+    activity: restyle-publish
+    calibration_type: null
+    slice: 2
+    status: pending
+    priority: critical
+    business_value: 10
+    complexity: M
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-001", "PL-002"]
+    description:
+      what_changes: "Given a Digest and the default StylePrompt, produce a styled post body and advance Paper to status=styled."
+      why: "Where PaperLens's personality lives; proves the voice rewrite at L0 with a default prompt."
+    acceptance_criteria:
+      - "Produces a non-empty styled body from a Digest using the active (default) StylePrompt."
+      - "Paper advances to status=styled on success."
+    interface_obligations:
+      implements: ["stylist.run"]
+      consumes: ["llm.complete", "db accessors"]
+      contract_tests_required: true
+    files_affected: ["packages/stylist/src/index.ts"]
+    technical_notes: null
+    verification:
+      unit: ["uses active prompt", "status advance"]
+      integration: ["digest -> styled body on a fixture"]
+      contract: ["styled body output shape"]
+  - id: PL-006
+    title: "Publisher: persist a published Post (title, body, citation, link)"
+    layer: 0
+    module: publisher
+    activity: restyle-publish
+    calibration_type: null
+    slice: 2
+    status: pending
+    priority: critical
+    business_value: 9
+    complexity: S
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-001"]
+    description:
+      what_changes: "From a styled body, assemble and persist a Post(status=published) with title, body, citation, and link to the source paper; Paper advances to status=published."
+      why: "Makes a post visible; completes the write side of the skeleton (no tags at L0)."
+    acceptance_criteria:
+      - "Creates a published Post with title, body, citation, and source link (no tags)."
+      - "Paper advances to status=published; published_at is set."
+    interface_obligations:
+      implements: ["publisher.publish"]
+      consumes: ["db accessors"]
+      contract_tests_required: false
+    files_affected: ["packages/publisher/src/index.ts"]
+    technical_notes: "Sanitize LLM output before storing as renderable body."
+    verification:
+      unit: ["post fields populated", "published_at invariant"]
+      integration: ["styled body -> published Post"]
+      contract: []
+  - id: PL-007
+    title: "L0 inline pipeline: dev-triggered single-paper run (crawl->digest->style->publish)"
+    layer: 0
+    module: orchestrator
+    activity: restyle-publish
+    calibration_type: null
+    slice: 3
+    status: pending
+    priority: critical
+    business_value: 10
+    complexity: M
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-003", "PL-004", "PL-005", "PL-006"]
+    description:
+      what_changes: "A dev-triggered entrypoint runs the four stages inline for one hardcoded arXiv ID, producing a published Post end-to-end."
+      why: "The walking-skeleton integration story; proves the end-to-end path before adding the queue (deferred to L1)."
+    acceptance_criteria:
+      - "Running the entrypoint on a hardcoded arXiv ID yields a published Post."
+      - "The run is idempotent: re-running does not duplicate the Paper or Post."
+    interface_obligations:
+      implements: ["orchestrator.runOnce (inline)"]
+      consumes: ["crawler.fetchById", "digestor.run", "stylist.run", "publisher.publish"]
+      contract_tests_required: false
+    files_affected: ["packages/orchestrator/src/index.ts", "apps/server/src/index.ts"]
+    technical_notes: "Inline is acceptable for ONE paper (LLM calls are I/O-bound). Queue introduced at L1."
+    verification:
+      unit: []
+      integration: ["end-to-end single-paper run produces a published Post"]
+      contract: []
+  - id: PL-008
+    title: "Reader API: listPosts + getPost (oRPC, public, published-only)"
+    layer: 0
+    module: api
+    activity: read-feed
+    calibration_type: null
+    slice: 2
+    status: pending
+    priority: critical
+    business_value: 9
+    complexity: S
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-001"]
+    description:
+      what_changes: "Public oRPC procedures list published posts reverse-chronologically and fetch one post by id."
+      why: "Backs the reader feed and article pages; must never leak unpublished content."
+    acceptance_criteria:
+      - "listPosts returns only published posts, newest first, with pagination."
+      - "getPost returns a published post or 404 for unpublished/missing."
+    interface_obligations:
+      implements: ["api.listPosts", "api.getPost"]
+      consumes: ["db accessors"]
+      contract_tests_required: true
+    files_affected: ["packages/api/src/routers/posts.ts", "packages/api/src/routers/index.ts"]
+    technical_notes: null
+    verification:
+      unit: ["unpublished excluded", "ordering"]
+      integration: []
+      contract: ["listPosts/getPost shapes"]
+  - id: PL-009
+    title: "Reader web: chronological feed page"
+    layer: 0
+    module: web
+    activity: read-feed
+    calibration_type: null
+    slice: 3
+    status: pending
+    priority: high
+    business_value: 8
+    complexity: S
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-008"]
+    description:
+      what_changes: "The reader landing route lists published posts reverse-chronologically with links to article pages."
+      why: "The read-feed activity; land-and-read experience."
+    acceptance_criteria:
+      - "Feed renders published posts newest-first via api.listPosts."
+      - "Each item links to its article page; no search/filter UI."
+    interface_obligations:
+      implements: []
+      consumes: ["api.listPosts"]
+      contract_tests_required: false
+    files_affected: ["apps/web/src/routes/index.tsx"]
+    technical_notes: null
+    verification:
+      unit: []
+      integration: ["feed renders seeded posts in order"]
+      contract: []
+  - id: PL-010
+    title: "Reader web: article page (title + body + source link)"
+    layer: 0
+    module: web
+    activity: read-article
+    calibration_type: null
+    slice: 3
+    status: pending
+    priority: high
+    business_value: 8
+    complexity: S
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-008"]
+    description:
+      what_changes: "An article route renders a single post's title and body with a working link back to the source paper."
+      why: "The read-article activity; closes the reader journey to the source."
+    acceptance_criteria:
+      - "Article page renders title, body, and a source-paper link via api.getPost."
+      - "Unknown/unpublished id shows a not-found state."
+    interface_obligations:
+      implements: []
+      consumes: ["api.getPost"]
+      contract_tests_required: false
+    files_affected: ["apps/web/src/routes/posts.$id.tsx"]
+    technical_notes: null
+    verification:
+      unit: []
+      integration: ["article renders a seeded post + source link"]
+      contract: []
+  - id: PL-011
+    title: "Layer-0 faithfulness eval harness (blind-grade sample)"
+    layer: 0
+    module: digestor
+    activity: null
+    calibration_type: null
+    slice: 4
+    status: pending
+    priority: high
+    business_value: 9
+    complexity: M
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-007"]
+    description:
+      what_changes: "A script runs the pipeline over ~20-30 arXiv IDs and exports the output (digest + styled post + source) for blind human grading of hallucinated/unsupported claims."
+      why: "The Layer-0 go/no-go gate (<=10% hallucination); validates the core trust bet before going deeper."
+    acceptance_criteria:
+      - "Harness runs N papers and produces a graded-output bundle (source vs digest vs post)."
+      - "A summary computes the hallucination rate from the human grades."
+    interface_obligations:
+      implements: ["eval harness script"]
+      consumes: ["orchestrator.runOnce"]
+      contract_tests_required: false
+    files_affected: ["scripts/faithfulness-eval.ts", "docs/faithfulness-eval.md"]
+    technical_notes: "Grading is human/blind; the script prepares + scores the bundle."
+    verification:
+      unit: ["rate computation"]
+      integration: ["harness runs over a small fixture set"]
+      contract: []
+
+  # ── Layer 0.5: Establish look & voice (alignment) ──
+  - id: PL-012
+    title: "Reader visual design system (typography, layout)"
+    layer: 0.5
+    module: web
+    activity: read-feed
+    calibration_type: visual-design
+    slice: 1
+    status: pending
+    priority: high
+    business_value: 7
+    complexity: M
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-009", "PL-010"]
+    description:
+      what_changes: "The reader feed + article adopt a calibrated visual identity (typography, spacing, layout) that feels like a personal blog."
+      why: "visual-design calibration; the reader experience must not feel like a database UI."
+    acceptance_criteria:
+      - "Decisions captured in calibration/visual-design.yaml."
+      - "Feed and article reflect the calibrated typography/layout."
+    interface_obligations:
+      implements: []
+      consumes: []
+      contract_tests_required: false
+    files_affected: ["apps/web/src/index.css", "apps/web/src/routes/index.tsx", "apps/web/src/routes/posts.$id.tsx"]
+    technical_notes: "Run /calibrate visual-design before/with this story."
+    verification:
+      unit: []
+      integration: ["visual review against the calibration brief"]
+      contract: []
+  - id: PL-013
+    title: "Default voice calibration (copy-tone of the default StylePrompt)"
+    layer: 0.5
+    module: stylist
+    activity: restyle-publish
+    calibration_type: copy-tone
+    slice: 1
+    status: pending
+    priority: high
+    business_value: 8
+    complexity: S
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-005", "PL-011"]
+    description:
+      what_changes: "The default StylePrompt is tuned against real L0 output so posts read in one consistent, worth-reading voice."
+      why: "copy-tone calibration; the voice is the differentiator."
+    acceptance_criteria:
+      - "Decisions captured in calibration/copy-tone.yaml."
+      - "Default StylePrompt updated to reflect the calibrated voice."
+    interface_obligations:
+      implements: []
+      consumes: []
+      contract_tests_required: false
+    files_affected: ["calibration/copy-tone.yaml", "packages/db/src/migrations/"]
+    technical_notes: "Run /calibrate copy-tone using real published posts as material."
+    verification:
+      unit: []
+      integration: ["voice review against the calibration brief"]
+      contract: []
+
+  # ── Layer 1: Curate & ingest on demand ──
+  - id: PL-014
+    title: "Owner authentication gate for the console (Better Auth)"
+    layer: 1
+    module: auth
+    activity: define-voice
+    calibration_type: null
+    slice: 1
+    status: pending
+    priority: critical
+    business_value: 7
+    complexity: M
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-001"]
+    description:
+      what_changes: "The console routes/procedures require an authenticated owner session; the reader side stays public."
+      why: "Protects the curation surface; prerequisite for console mutations."
+    acceptance_criteria:
+      - "Unauthenticated access to console procedures returns 401."
+      - "Owner can sign in and reach the console."
+    interface_obligations:
+      implements: ["auth session check for console"]
+      consumes: []
+      contract_tests_required: false
+    files_affected: ["packages/auth/src/index.ts", "packages/api/src/context.ts"]
+    technical_notes: "Cross-subdomain cookie config is an open question for deploy."
+    verification:
+      unit: ["401 on unauthenticated console call"]
+      integration: ["sign-in reaches console"]
+      contract: []
+  - id: PL-015
+    title: "Console API: getActivePrompt + updateActivePrompt (auth-gated)"
+    layer: 1
+    module: api
+    activity: define-voice
+    calibration_type: null
+    slice: 2
+    status: pending
+    priority: critical
+    business_value: 9
+    complexity: S
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-001", "PL-014"]
+    description:
+      what_changes: "Auth-gated oRPC procedures read and update the single active StylePrompt (transactional active flip)."
+      why: "Backs the console editor; the define-voice activity."
+    acceptance_criteria:
+      - "updateActivePrompt persists new content and keeps exactly one active prompt."
+      - "Both procedures require an owner session."
+    interface_obligations:
+      implements: ["api.getActivePrompt", "api.updateActivePrompt"]
+      consumes: ["db accessors"]
+      contract_tests_required: true
+    files_affected: ["packages/api/src/routers/prompt.ts"]
+    technical_notes: null
+    verification:
+      unit: ["single-active invariant after update"]
+      integration: []
+      contract: ["prompt procedures shapes"]
+  - id: PL-016
+    title: "Console web: edit + save the active style prompt"
+    layer: 1
+    module: web
+    activity: define-voice
+    calibration_type: null
+    slice: 3
+    status: pending
+    priority: high
+    business_value: 8
+    complexity: S
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-015"]
+    description:
+      what_changes: "An auth-gated console page lets the owner view, edit, and save the active style prompt."
+      why: "The owner-facing lever that makes the feed feel personal."
+    acceptance_criteria:
+      - "Owner edits the prompt and saves; reload shows the saved content."
+      - "Page is unreachable without auth."
+    interface_obligations:
+      implements: []
+      consumes: ["api.getActivePrompt", "api.updateActivePrompt"]
+      contract_tests_required: false
+    files_affected: ["apps/web/src/routes/console/prompt.tsx"]
+    technical_notes: null
+    verification:
+      unit: []
+      integration: ["edit -> save -> reload persists"]
+      contract: []
+  - id: PL-017
+    title: "Stylist uses the active StylePrompt from DB (not a hardcoded default)"
+    layer: 1
+    module: stylist
+    activity: restyle-publish
+    calibration_type: null
+    slice: 1
+    status: pending
+    priority: high
+    business_value: 8
+    complexity: S
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-005"]
+    description:
+      what_changes: "Stylist reads the current active StylePrompt from the DB at run time so prompt edits affect new posts."
+      why: "Connects the console's define-voice loop to the pipeline output."
+    acceptance_criteria:
+      - "Changing the active prompt changes the voice of subsequently styled posts."
+    interface_obligations:
+      implements: []
+      consumes: ["db accessors"]
+      contract_tests_required: false
+    files_affected: ["packages/stylist/src/index.ts"]
+    technical_notes: null
+    verification:
+      unit: ["reads active prompt at run time"]
+      integration: ["prompt change reflected in new post"]
+      contract: []
+  - id: PL-018
+    title: "Queue-based pipeline + durable intermediates + Paper state machine"
+    layer: 1
+    module: orchestrator
+    activity: null
+    calibration_type: null
+    slice: 1
+    status: pending
+    priority: critical
+    business_value: 9
+    complexity: L
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-003", "PL-004", "PL-005", "PL-006"]
+    description:
+      what_changes: "The pipeline runs over Cloudflare Queues, one message per (paper, stage), with each stage reading/writing durable D1 intermediates and advancing Paper.status; the server hosts the queue consumer."
+      why: "Replaces the L0 inline run with the real, scalable, resumable architecture (ADR-001)."
+    acceptance_criteria:
+      - "A discovery enqueue fans out one digest message per new paper."
+      - "Each stage advances Paper.status and enqueues the next; a stage retry resumes from the last good intermediate."
+    interface_obligations:
+      implements: ["orchestrator.enqueueDiscovery", "queue consumer dispatch"]
+      consumes: ["crawler/digestor/stylist/publisher", "db accessors"]
+      contract_tests_required: true
+    files_affected: ["packages/orchestrator/src/index.ts", "apps/server/src/index.ts"]
+    technical_notes: "One LLM call per message to stay within Workers limits."
+    verification:
+      unit: ["state transitions", "idempotent stage re-run"]
+      integration: ["queue run produces published posts for a batch"]
+      contract: ["queue message shape"]
+  - id: PL-019
+    title: "Crawler discovery + dedup over a batch (not just one ID)"
+    layer: 1
+    module: crawler
+    activity: ingest-digest
+    calibration_type: null
+    slice: 2
+    status: pending
+    priority: high
+    business_value: 8
+    complexity: M
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-003", "PL-018"]
+    description:
+      what_changes: "Crawler queries arXiv for recent papers, dedups by arxiv_id, and persists only new Papers for the orchestrator to fan out."
+      why: "Turns the single-ID L0 fetch into real discovery; dedup keeps manual re-runs safe."
+    acceptance_criteria:
+      - "A discovery run persists only papers not already seen."
+      - "Re-running discovery produces no duplicates."
+    interface_obligations:
+      implements: ["crawler.discover"]
+      consumes: ["db accessors"]
+      contract_tests_required: false
+    files_affected: ["packages/crawler/src/index.ts"]
+    technical_notes: "Honor arXiv rate limit + custom UA."
+    verification:
+      unit: ["dedup across runs"]
+      integration: ["discovery persists only new papers"]
+      contract: []
+  - id: PL-020
+    title: "Manual 'run now' trigger (auth-gated) enqueues a discovery run"
+    layer: 1
+    module: api
+    activity: ingest-digest
+    calibration_type: null
+    slice: 3
+    status: pending
+    priority: high
+    business_value: 8
+    complexity: S
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-018", "PL-015"]
+    description:
+      what_changes: "An auth-gated triggerRun procedure (and a console button) enqueues a discovery run and returns a runId."
+      why: "Lets the owner ingest on demand through Layer 1; the Scheduler is deferred to Layer 2."
+    acceptance_criteria:
+      - "triggerRun enqueues a discovery message and creates a Run row."
+      - "A console button invokes it; reader side cannot."
+    interface_obligations:
+      implements: ["api.triggerRun"]
+      consumes: ["orchestrator.enqueueDiscovery"]
+      contract_tests_required: true
+    files_affected: ["packages/api/src/routers/run.ts", "apps/web/src/routes/console/index.tsx"]
+    technical_notes: null
+    verification:
+      unit: ["auth required"]
+      integration: ["trigger -> run executes via queue"]
+      contract: ["triggerRun shape"]
+  - id: PL-021
+    title: "Unpublish / edit a post (owner)"
+    layer: 1
+    module: api
+    activity: restyle-publish
+    calibration_type: null
+    slice: 2
+    status: pending
+    priority: medium
+    business_value: 6
+    complexity: S
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-006", "PL-008", "PL-014"]
+    description:
+      what_changes: "An auth-gated setPostStatus procedure lets the owner unpublish or republish a post (and edit its body)."
+      why: "Completes the auto-publish + owner-can-unpublish/edit decision; the safety net for a bad post."
+    acceptance_criteria:
+      - "setPostStatus toggles a post between published/unpublished; unpublished disappears from the feed."
+      - "Procedure requires an owner session."
+    interface_obligations:
+      implements: ["api.setPostStatus"]
+      consumes: ["db accessors"]
+      contract_tests_required: false
+    files_affected: ["packages/api/src/routers/posts.ts", "apps/web/src/routes/console/posts.tsx"]
+    technical_notes: null
+    verification:
+      unit: ["status toggle", "auth required"]
+      integration: ["unpublished hidden from feed"]
+      contract: []
+
+  # ── Layer 1.5: Console flow & voice extension (alignment) ──
+  - id: PL-022
+    title: "Console preview: preview a rewrite before publishing"
+    layer: 1.5
+    module: web
+    activity: define-voice
+    calibration_type: ux-flow
+    slice: 1
+    status: pending
+    priority: medium
+    business_value: 7
+    complexity: M
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-016", "PL-017"]
+    description:
+      what_changes: "The console can run the stylist on an existing Digest with a draft prompt and show the result without persisting a Post; the edit->preview->publish flow is calibrated."
+      why: "ux-flow calibration + the deferred preview feature; tightens the curation loop."
+    acceptance_criteria:
+      - "previewRewrite returns a styled body for a chosen paper without creating a Post."
+      - "ux-flow decisions captured (calibration)."
+    interface_obligations:
+      implements: ["api.previewRewrite"]
+      consumes: ["stylist.run", "llm.complete"]
+      contract_tests_required: false
+    files_affected: ["packages/api/src/routers/prompt.ts", "apps/web/src/routes/console/prompt.tsx"]
+    technical_notes: "Run /calibrate ux-flow with this story."
+    verification:
+      unit: ["preview does not persist a Post"]
+      integration: ["preview shows a rewrite"]
+      contract: []
+  - id: PL-023
+    title: "Copy-tone calibration extension (voice refinement on real posts)"
+    layer: 1.5
+    module: stylist
+    activity: restyle-publish
+    calibration_type: copy-tone
+    slice: 1
+    status: pending
+    priority: medium
+    business_value: 6
+    complexity: S
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-013", "PL-017"]
+    description:
+      what_changes: "Extend the copy-tone calibration using a larger body of published posts now that the owner actively tunes prompts."
+      why: "Keeps the voice consistent as the prompt evolves."
+    acceptance_criteria:
+      - "calibration/copy-tone.yaml extended with the delta decisions."
+    interface_obligations:
+      implements: []
+      consumes: []
+      contract_tests_required: false
+    files_affected: ["calibration/copy-tone.yaml"]
+    technical_notes: "Run /calibrate copy-tone in extension mode."
+    verification:
+      unit: []
+      integration: ["voice review against extended brief"]
+      contract: []
+
+  # ── Layer 2: Continuous & polished ──
+  - id: PL-024
+    title: "Scheduler: Cron-triggered recurring pipeline run"
+    layer: 2
+    module: orchestrator
+    activity: ingest-digest
+    calibration_type: null
+    slice: 1
+    status: pending
+    priority: high
+    business_value: 8
+    complexity: M
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-018"]
+    description:
+      what_changes: "A Cloudflare Cron trigger calls enqueueDiscovery on a recurring cadence so ingestion runs without manual triggering."
+      why: "Delivers the 'continuous' promise; deferred from MVP to keep the skeleton thin."
+    acceptance_criteria:
+      - "A scheduled() handler enqueues a discovery run on cadence."
+      - "Manual trigger still works alongside Cron."
+    interface_obligations:
+      implements: ["server scheduled() handler"]
+      consumes: ["orchestrator.enqueueDiscovery"]
+      contract_tests_required: false
+    files_affected: ["apps/server/src/index.ts", "alchemy.run.ts"]
+    technical_notes: null
+    verification:
+      unit: []
+      integration: ["cron tick enqueues a run"]
+      contract: []
+  - id: PL-025
+    title: "Per-stage retry/backoff + failure escalation + resume-from-stage"
+    layer: 2
+    module: orchestrator
+    activity: null
+    calibration_type: null
+    slice: 1
+    status: pending
+    priority: high
+    business_value: 7
+    complexity: M
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-018"]
+    description:
+      what_changes: "Stages retry with backoff via the queue; after max_retries a Paper is marked failed and the owner is alerted; runs resume from the last good intermediate."
+      why: "Robustness for unattended operation (failure model)."
+    acceptance_criteria:
+      - "A transient stage failure retries and then succeeds; a persistent failure marks the Paper failed and alerts."
+      - "Resuming a failed run does not re-run completed stages."
+    interface_obligations:
+      implements: ["retry/escalation policy"]
+      consumes: ["queue redelivery"]
+      contract_tests_required: false
+    files_affected: ["packages/orchestrator/src/index.ts", "apps/server/src/index.ts"]
+    technical_notes: null
+    verification:
+      unit: ["retry then succeed", "fail after N", "resume skips completed stages"]
+      integration: ["simulated stage failure recovers"]
+      contract: []
+  - id: PL-026
+    title: "Post tags (generate + display)"
+    layer: 2
+    module: publisher
+    activity: read-article
+    calibration_type: null
+    slice: 1
+    status: pending
+    priority: medium
+    business_value: 5
+    complexity: S
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-006"]
+    description:
+      what_changes: "Posts carry tags (from the digest/metadata), shown on the article page."
+      why: "Polish deferred from L0; aids scanning without adding reader-side filtering."
+    acceptance_criteria:
+      - "New posts get tags; the article page displays them."
+    interface_obligations:
+      implements: []
+      consumes: ["db accessors"]
+      contract_tests_required: false
+    files_affected: ["packages/publisher/src/index.ts", "apps/web/src/routes/posts.$id.tsx"]
+    technical_notes: null
+    verification:
+      unit: ["tags persisted"]
+      integration: ["tags render"]
+      contract: []
+  - id: PL-027
+    title: "Clean citation formatting"
+    layer: 2
+    module: publisher
+    activity: read-article
+    calibration_type: null
+    slice: 1
+    status: pending
+    priority: low
+    business_value: 4
+    complexity: S
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-006"]
+    description:
+      what_changes: "Citations are formatted consistently (authors, title, venue/arXiv id, link) on article pages."
+      why: "Trust/credibility polish."
+    acceptance_criteria:
+      - "Article pages show a consistently formatted citation with a working source link."
+    interface_obligations:
+      implements: []
+      consumes: []
+      contract_tests_required: false
+    files_affected: ["packages/publisher/src/index.ts", "apps/web/src/routes/posts.$id.tsx"]
+    technical_notes: null
+    verification:
+      unit: ["citation formatting"]
+      integration: []
+      contract: []
+  - id: PL-028
+    title: "Cost tracking per post + budget alerts"
+    layer: 2
+    module: orchestrator
+    activity: null
+    calibration_type: null
+    slice: 1
+    status: pending
+    priority: medium
+    business_value: 6
+    complexity: S
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-002", "PL-018"]
+    description:
+      what_changes: "LLM token usage is captured per post and aggregated; an alert fires when cost-per-post exceeds a configurable threshold."
+      why: "Keeps the kill-criterion 'cost exceeds value' observable."
+    acceptance_criteria:
+      - "Cost per post is recorded from llm usage; aggregate cost is queryable."
+      - "Exceeding the threshold records a cost alert."
+    interface_obligations:
+      implements: ["cost capture + alert"]
+      consumes: ["llm usage", "db accessors"]
+      contract_tests_required: false
+    files_affected: ["packages/orchestrator/src/index.ts", "packages/db/src/schema/paperlens.ts"]
+    technical_notes: null
+    verification:
+      unit: ["cost aggregation", "alert on threshold"]
+      integration: []
+      contract: []
+
+# ─── WAVES (/map Step 3) ─────────────────────────────────────
+waves:
+  - layer: 0
+    wave: 1
+    stories: ["PL-001", "PL-002"]
+    theme: "Foundation: schema + LLM client"
+  - layer: 0
+    wave: 2
+    stories: ["PL-003", "PL-004", "PL-005", "PL-006", "PL-008"]
+    theme: "Stages + reader API (parallel against contracts)"
+  - layer: 0
+    wave: 3
+    stories: ["PL-007", "PL-009", "PL-010"]
+    theme: "End-to-end integration + reader UI"
+  - layer: 0
+    wave: 4
+    stories: ["PL-011"]
+    theme: "Faithfulness eval gate"
+  - layer: 0.5
+    wave: 1
+    stories: ["PL-012", "PL-013"]
+    theme: "Establish look & voice (calibration)"
+  - layer: 1
+    wave: 1
+    stories: ["PL-014", "PL-017", "PL-018"]
+    theme: "Auth + active-prompt stylist + queue pipeline"
+  - layer: 1
+    wave: 2
+    stories: ["PL-015", "PL-019", "PL-021"]
+    theme: "Console API + discovery + unpublish"
+  - layer: 1
+    wave: 3
+    stories: ["PL-016", "PL-020"]
+    theme: "Console UI + manual run-now"
+  - layer: 1.5
+    wave: 1
+    stories: ["PL-022", "PL-023"]
+    theme: "Console preview + voice extension (calibration)"
+  - layer: 2
+    wave: 1
+    stories: ["PL-024", "PL-025", "PL-026", "PL-027", "PL-028"]
+    theme: "Scheduler, resilience, tags, citations, cost"
+
+# ─── LAYER GATES ─────────────────────────────────────────────
+layer_gates:
+  - layer: 0
+    status: not_started
+    test_definition: "One hardcoded arXiv paper flows crawl->digest->style->publish to a published Post; the feed lists it and the article page renders title+body+source link. Faithfulness eval run with <=10% hallucinated/unsupported claims over ~20-30 papers."
+    results:
+      tests_run: 0
+      tests_passed: 0
+      tests_failed: 0
+      failures: []
+    completed_at: null
+  - layer: 1
+    status: not_started
+    test_definition: "Owner signs in, edits the active style prompt, triggers a manual 'run now' over a batch via the queue, and sees new deduped posts in the owner's voice; unpublishing a post removes it from the feed."
+    results:
+      tests_run: 0
+      tests_passed: 0
+      tests_failed: 0
+      failures: []
+    completed_at: null
+  - layer: 2
+    status: not_started
+    test_definition: "Cron triggers a run on cadence without manual action; a simulated stage failure retries and recovers (or marks failed + alerts); posts show tags + clean citations; cost-per-post is tracked with a threshold alert."
+    results:
+      tests_run: 0
+      tests_passed: 0
+      tests_failed: 0
+      failures: []
+    completed_at: null
+
+# ─── TOPOLOGY (/map Step 4) ──────────────────────────────────
+topology:
+  roles:
+    - name: implementer
+      purpose: "Takes a story spec and produces code + tests + PR."
+      does: ["implement", "unit test", "contract test", "submit PR"]
+      does_not: ["decide scope", "modify architecture", "skip tests"]
+      input_contract:
+        story_spec: "Full story from stories section"
+        context_slice:
+          context_document: "Pruned to: problem, constraints, relevant layer"
+          system_map_module: "This story's module definition + technical-spec section"
+          adjacent_interfaces: "Interface contracts where from/to matches this module"
+          dependency_artifacts: "Public API surface from completed dependencies"
+      output_contract:
+        implementation:
+          branch_name: "string"
+          files_changed: "FileDiff[]"
+          pr_url: "string"
+        verification:
+          unit_tests: "TestResult[]"
+          contract_tests: "TestResult[]"
+          all_passing: "boolean"
+        status_report:
+          story_id: "string"
+          outcome: "success | failure"
+          error_summary: "string (if failure)"
+          what_was_not_tried: "string[]"
+      context_composition:
+        - "Story spec (full)"
+        - "Context Document (pruned: problem, constraints, relevant layer)"
+        - "System Map (story's module + adjacent interfaces) + docs/technical-spec.md section"
+        - "Dependency artifacts (public API surface only)"
+      cost_budget:
+        input_tokens_max: 60000
+        output_tokens_max: 24000
+        alert_threshold_total: 120000
+    - name: evaluator
+      purpose: "Independently verifies the implementation against the story spec + contracts before PR merge."
+      does: ["run acceptance + contract tests", "check interface compliance", "report verdict"]
+      does_not: ["write feature code", "expand scope"]
+      input_contract:
+        story_spec: "Full story"
+        context_slice:
+          adjacent_interfaces: "Contracts this story implements/consumes"
+      output_contract:
+        verdict:
+          story_id: "string"
+          all_acceptance_met: "boolean"
+          contract_compliant: "boolean"
+          findings: "string[]"
+      context_composition:
+        - "Story spec (full)"
+        - "Diff + test results"
+      cost_budget:
+        input_tokens_max: 40000
+        output_tokens_max: 12000
+        alert_threshold_total: 80000
+  routing:
+    dispatch: fifo_within_slice
+    concurrency_limit: 5
+    conflict_detection: files_affected_overlap
+    retry: "2x same agent -> failure analyst -> fresh agent -> human escalation"
+    autonomous: false
+    auto_design: false
+    skip_human_eval: none
+  handoffs:
+    - from: implementer
+      to: evaluator
+      trigger: implementation_complete
+      payload: "eval-request.md + code diff + contracts.md + feature-verification.json"
+      validation:
+        - "All tasks committed on the feature branch"
+        - "Dev server running and accessible"
+        - "eval-request.md created with round number and change summary"
+      on_validation_failure: "reject handoff, notify source agent"
+
+# ─── COST TRACKING ───────────────────────────────────────────
 cost:
   total_usd: 0
   by_layer: {}
@@ -39,11 +1280,23 @@ changelog:
   - date: "2026-06-08"
     type: initial
     author: human
-    summary: "Created product context via /envision: opportunity brief (decision=proceed), two personas (owner-curator primary, reader secondary), two capabilities (reading, curation), and full product framing — problem, goals, MVP boundary, six-activity backbone, layers 0-2 with 0.5/1.5 alignment layers, constraints on the scaffolded better-t-stack (Cloudflare D1, OpenRouter LLM), failure & security models, success criteria, quality dimensions (copy-tone, visual-design, ux-flow), key decisions, and a resolved stress test. Operational sections (architecture/stories/waves/topology/layer_gates) pending /map."
+    summary: "Created product context via /envision: opportunity brief (decision=proceed), two personas (owner-curator primary, reader secondary), two capabilities (reading, curation), and full product framing — problem, goals, MVP boundary, six-activity backbone, layers 0-2 with 0.5/1.5 alignment layers, constraints on the scaffolded better-t-stack (Cloudflare D1, OpenRouter LLM), failure & security models, success criteria, quality dimensions (copy-tone, visual-design, ux-flow), key decisions, and a resolved stress test."
     sections_changed:
       - opportunity
       - personas
       - capabilities
       - product
       - calibration
+      - changelog
+  - date: "2026-06-08"
+    type: map_update
+    author: agent
+    summary: "Decomposed via /map: system map (11 modules incl. greenfield crawler/digestor/stylist/publisher/orchestrator/llm + existing db/api/auth/web/server) with domain model, ingest-pipeline protocol sequence, interface contracts, data flows, third-party (arXiv/OpenRouter), deployment, and ADRs; standalone docs/technical-spec.md. Story graph of 28 stories across layers 0/0.5/1/1.5/2 with waves, dependencies, and a Layer-0 walking skeleton covering every Layer-0 activity (connect-source, ingest-digest, restyle-publish, read-feed, read-article). Layer gates for 0/1/2, implementer+evaluator topology, and cost tracking initialized."
+    sections_changed:
+      - architecture
+      - stories
+      - waves
+      - topology
+      - layer_gates
+      - cost
       - changelog
