@@ -1,0 +1,49 @@
+# PaperLens — operational state (split mode, v2)
+# Stable product definition lives in product/index.yaml.
+# This file holds operational state: calibration, architecture, stories,
+# waves, topology, layer_gates, cost, changelog.
+# CONCURRENCY: only the MAIN SESSION writes here. Workspace agents report
+# status via .dev-workflow/signals/.
+schema: v1
+project: PaperLens
+version: "0.1.0"
+updated_at: "2026-06-08T03:21:36Z"
+dispatch_epoch: 0
+
+# ─── CALIBRATION (/envision plan; /calibrate history) ────────
+calibration:
+  plan:
+    - layer: 0.5
+      dimensions: ["visual-design", "copy-tone"]
+      trigger: "Layer 0 has produced real published posts to react to."
+    - layer: 1.5
+      dimensions: ["ux-flow", "copy-tone"]
+      trigger: "The Curation Console exists and several posts have been published in the owner's voice."
+  history: []
+
+# ─── OPERATIONAL SECTIONS (populated by /map) ────────────────
+architecture: null
+stories: []
+waves: []
+topology: null
+layer_gates: []
+cost:
+  total_usd: 0
+  by_layer: {}
+  by_module: {}
+  by_story: {}
+  alerts: []
+
+# ─── CHANGELOG ───────────────────────────────────────────────
+changelog:
+  - date: "2026-06-08"
+    type: initial
+    author: human
+    summary: "Created product context via /envision: opportunity brief (decision=proceed), two personas (owner-curator primary, reader secondary), two capabilities (reading, curation), and full product framing — problem, goals, MVP boundary, six-activity backbone, layers 0-2 with 0.5/1.5 alignment layers, constraints on the scaffolded better-t-stack (Cloudflare D1, OpenRouter LLM), failure & security models, success criteria, quality dimensions (copy-tone, visual-design, ux-flow), key decisions, and a resolved stress test. Operational sections (architecture/stories/waves/topology/layer_gates) pending /map."
+    sections_changed:
+      - opportunity
+      - personas
+      - capabilities
+      - product
+      - calibration
+      - changelog

@@ -1,0 +1,320 @@
+# PaperLens — product definition (split mode, v2)
+# Stable intent: opportunity, personas, capabilities, product framing.
+# Created by /envision. Operational state lives in product-context.yaml.
+schema: v1
+project: PaperLens
+
+# ─── OPPORTUNITY (/envision Phase 0) ─────────────────────────
+opportunity:
+  bet: "I believe research-literate people who want to stay current with fast-moving fields have more relevant papers than they can read, and I can build an AI blog that continuously digests new papers and republishes them as short posts in a consistent voice the owner controls, because long-context LLMs can now faithfully digest and restyle papers cheaply and the controllable editorial voice is the thing generic summarizers lack."
+  why_now: "Long-context LLMs (2024-2025) can ingest full papers and produce structured digests plus voice-consistent rewrites reliably and cheaply enough to run on a schedule; an owned, consistent editorial voice is now a buildable feature rather than a research problem."
+  counter_arguments:
+    - "Crowded space (aggregators, newsletters, X threads); 'voice control' may not be a strong enough moat."
+    - "Accuracy/trust: AI digests of technical papers can be subtly wrong, and researchers are the least forgiving audience; a confidently-wrong digest is worse than none."
+    - "Distribution: a 'personal blog' may have an audience of one; unclear it beats existing tools for that user."
+  scale_of_impact: "For the owner: turns the firehose into a daily readable feed (hours/week saved, less keeping-up anxiety). Audience upside is secondary; primarily a high-personal-leverage project first."
+  kill_criteria:
+    - "Digests can't reach a quality bar where the owner trusts them without re-reading the paper (faithfulness gate fails)."
+    - "Existing newsletters/aggregators already cover the need well enough in practice."
+    - "Pipeline cost (money plus babysitting failures) exceeds the value of the curated feed."
+  decision: proceed
+  decided_at: "2026-06-08"
+
+# ─── PERSONAS ────────────────────────────────────────────────
+personas:
+  - id: owner-curator
+    description: "Primary user. A research-literate person (researcher, grad student, or practitioner in a fast-moving field such as ML/AI) who wants their own auto-maintained digest blog in a voice they control. Technically comfortable; runs PaperLens for themselves and is reader number one."
+    jtbd: "When a wave of new papers lands, I want PaperLens to digest and restyle them in my voice, so I can stay current by reading a feed instead of PDFs."
+  - id: reader
+    description: "Secondary user. Someone who follows the PaperLens feed to stay current, drawn by the consistent editorial voice. Read-only; no account."
+    jtbd: "When I want to keep up with a field without reading every paper, I want a curated feed of short, well-written posts, so I can read what matters and click through only when I want depth."
+
+# ─── CAPABILITIES (two distinct journeys) ────────────────────
+capabilities:
+  - id: reading
+    name: "Reading (reader-facing blog)"
+    primary_persona: reader
+    summary: "The public reader experience: a reverse-chronological feed of published posts and clean per-article pages that link back to the source paper. Land-and-read, no search/filter."
+    map: "product/maps/reading/frame.yaml"
+  - id: curation
+    name: "Curation (private console)"
+    primary_persona: owner-curator
+    summary: "The private backend where the owner controls PaperLens's voice: edit and save the single active style prompt and trigger ingestion runs manually."
+    map: "product/maps/curation/frame.yaml"
+
+# ─── PRODUCT (/envision Phase 1) ─────────────────────────────
+product:
+  problem: "Researchers, grad students, and practitioners in fast-moving fields get more relevant papers published than they can possibly read. Aggregators (arXiv-sanity, Papers with Code, Scholar Inbox) surface volume, not understanding; generic summarizers produce voiceless bullet walls. There is no tool that turns the firehose into a curated, consistently-voiced feed the owner would actually enjoy reading."
+  goals:
+    - "Given an arXiv ID, fetch the paper's full text, produce a structured digest (contributions, methods, results), restyle it with the active style prompt, and create a published post visible in the feed."
+    - "List published posts in reverse-chronological order on the reader feed; each post has its own article page that links back to the source paper."
+    - "Owner can edit the single active style prompt in the Console and have subsequent posts use it."
+    - "Dedup papers by arXiv ID so the same paper is never published twice."
+    - "From Layer 2, run the pipeline automatically on a recurring cadence with per-stage retries."
+  non_goals:
+    - statement: "Search, filters, or a tag cloud on the reader side"
+      reasoning: "The README explicitly wants a land-and-read feed; search is not the product."
+    - statement: "Reader accounts, following, saving, or comments"
+      reasoning: "Audience-of-one MVP; reader personalization is Phase 3."
+    - statement: "Multiple sources beyond arXiv at MVP"
+      reasoning: "arXiv-first; other venues plug in behind the Crawler interface in Phase 2."
+    - statement: "Multi-prompt or topic-specific voice library at MVP"
+      reasoning: "A single active prompt keeps the console minimal; presets are Phase 3."
+  mvp_boundary:
+    in_scope:
+      - "arXiv crawler (single, hardcoded source) with dedup by arXiv ID"
+      - "Digestor: extract a structured digest from the paper's full text via OpenRouter"
+      - "Stylist: rewrite the digest into a blog post using the active style prompt via OpenRouter"
+      - "Publisher: render a published post (title, body, citation/link to source)"
+      - "Reader feed (reverse-chronological) and per-article pages with clean typography"
+      - "Curation Console: edit and save the single active style prompt"
+      - "Owner authentication for the Console (Better Auth)"
+      - "Manual 'run now' ingestion trigger (Scheduler automation deferred to Layer 2)"
+      - "Layer-0 faithfulness eval (blind-graded sample) as a go/no-go gate"
+    out_of_scope:
+      - "Search bar, filter panel, or tag cloud on the reader side"
+      - "Reader accounts, following/saving, or comments"
+      - "Tags on posts at Layer 0 (added at Layer 2)"
+    deferred:
+      - "Recurring Scheduler with retries (Layer 2)"
+      - "Console preview of a rewrite before publishing (Layer 1.5)"
+      - "Additional sources (OpenReview, ACL Anthology, bioRxiv) plus per-source tagging (Phase 2)"
+      - "Style-presets library, topic-specific voices, reader preferences (Phase 3)"
+  constraints:
+    required_stack:
+      frontend: "React 19 + Vite + TanStack Router"
+      backend: "Hono on Cloudflare Workers"
+      database: "Cloudflare D1 (SQLite via the Drizzle d1 driver, bound as DB)"
+      orm: "Drizzle ORM"
+      api: "oRPC"
+      auth: "Better Auth"
+      runtime: "Bun + Turborepo monorepo"
+    preferred_stack:
+      orchestration: "Cloudflare Queues and/or Workflows for the pipeline, with Cron Triggers as the periodic producer (decided in /map)."
+      pdf_extraction: "Prefer arXiv HTML/LaTeX source as the full-text channel; offload binary PDF extraction to an external service rather than parsing PDF in a Worker."
+    infrastructure: "Cloudflare Workers (server plus scheduled triggers), static web on Cloudflare; deployed via Alchemy (infrastructure-as-TypeScript). Database is Cloudflare D1."
+    external_deps:
+      - name: arXiv
+        provides: "Source of papers (metadata plus full text via HTML/LaTeX source or PDF)"
+        failure_mode: "Skip the run/tick and retry next cadence; respect arXiv rate limits (~1 request per 3s, custom User-Agent)."
+      - name: OpenRouter
+        provides: "LLM inference via an OpenAI-compatible API for the Digestor and Stylist; models configurable per stage via env (e.g. a cheaper model for digest, a stronger one for styling)."
+        failure_mode: "Retry with exponential backoff; leave the paper at its current pipeline stage (durable intermediate); escalate after N consecutive failures."
+  layers:
+    - layer: 0
+      name: "Walking Skeleton"
+      user_can: "Trigger PaperLens on one hardcoded arXiv paper and watch it flow end-to-end: fetch full text, digest, restyle with a default prompt, publish, the post appears in the chronological feed, and the article page renders title plus body plus a link to the source paper. No tags, no scheduler, no console, no auth."
+      verification: "Run the pipeline on a known arXiv ID; assert a published post row is created, the feed lists it, and the article page renders the body and a working source link. Run the Layer-0 faithfulness eval on the sampled output."
+      outcome_contract:
+        hypothesis: "A full-paper digest restyled in a default voice is faithful and reads like something worth publishing — the core bet holds."
+        success_metric:
+          type: error_rate
+          target: "<= 10% of a blind-graded sample (~20-30 posts) contain a hallucinated or unsupported claim"
+        decision_rule:
+          keep_if: "metric <= target"
+          otherwise: "reflect_and_reslice (and reconsider the opportunity if the gate badly fails)"
+    - layer: 0.5
+      name: "Establish look & voice (alignment)"
+      user_can: "Alignment layer (no new user capability): the owner calibrates the reader-side visual identity/typography and the default AI voice against real Layer-0 output."
+      verification: "calibration/visual-design.yaml and calibration/copy-tone.yaml exist and capture the owner's decisions."
+      outcome_contract: null
+    - layer: 1
+      name: "Curate & ingest on demand"
+      user_can: "Everything from Layer 0, plus: log into the Curation Console, edit and save the single active style prompt, trigger an ingestion run manually ('run now'), and have new arXiv papers deduped by ID so manual re-runs are safe."
+      verification: "Owner edits the prompt, runs 'run now' on a small batch, and sees new posts in the owner's voice; re-running does not duplicate posts."
+      outcome_contract:
+        hypothesis: "Owner-controlled voice makes the feed feel personal and worth reading, not like a generic summarizer."
+        success_metric:
+          type: satisfaction_score
+          target: "owner rates the feed's voice as consistent and worth reading"
+        decision_rule:
+          keep_if: "metric >= target"
+          otherwise: "reflect_and_reslice"
+    - layer: 1.5
+      name: "Console flow & voice extension (alignment)"
+      user_can: "Alignment layer: calibrate the Console edit -> preview -> publish flow (ux-flow) and extend the voice calibration (copy-tone) now that the owner is actively tuning prompts. The deferred 'preview a rewrite' feature lands here."
+      verification: "ux-flow decisions captured; preview-before-publish works in the Console; copy-tone calibration extended."
+      outcome_contract: null
+    - layer: 2
+      name: "Continuous & polished"
+      user_can: "Everything from Layer 1, plus: PaperLens runs on a recurring schedule with per-stage retries (no manual trigger needed), posts carry tags plus clean citations, and basic cost controls/observability exist."
+      verification: "Scheduler runs on cadence; a simulated stage failure retries and resumes; posts show tags; cost per post is tracked."
+      outcome_contract: null
+  activities:
+    - id: connect-source
+      name: "Connect source"
+      description: "Owner enables/configures a paper source (hardcoded arXiv at Layer 0; configurable later)."
+      order: 1
+      layer_introduced: 0
+    - id: ingest-digest
+      name: "Ingest & digest"
+      description: "PaperLens fetches new papers (full text) and extracts a structured digest of contributions, methods, and results."
+      order: 2
+      layer_introduced: 0
+    - id: define-voice
+      name: "Define voice"
+      description: "Owner writes/edits the active style prompt that defines PaperLens's voice (default prompt used at Layer 0)."
+      order: 3
+      layer_introduced: 1
+    - id: restyle-publish
+      name: "Restyle & publish"
+      description: "PaperLens rewrites the digest in the active voice and publishes it to the feed (auto-publish; owner can unpublish/edit)."
+      order: 4
+      layer_introduced: 0
+    - id: read-feed
+      name: "Read the feed"
+      description: "Reader browses the reverse-chronological feed of published posts."
+      order: 5
+      layer_introduced: 0
+    - id: read-article
+      name: "Read an article"
+      description: "Reader opens a post's article page and follows the citation to the source paper."
+      order: 6
+      layer_introduced: 0
+  failure_model:
+    classes:
+      - name: "Source failures (arXiv)"
+        examples: "API timeout, non-200 status, rate-limited, malformed Atom XML"
+        detection: "HTTP status checks plus response schema validation"
+        recovery: "Skip the run/tick and retry next cadence with backoff; respect ~1 request per 3s"
+        escalation: "Log; alert owner after 3 consecutive failures"
+      - name: "LLM failures (OpenRouter)"
+        examples: "timeout, rate limit, non-JSON or invalid structured output"
+        detection: "HTTP status plus output schema validation"
+        recovery: "Retry with exponential backoff; leave the paper at its current stage (durable intermediate) for re-attempt"
+        escalation: "After N attempts mark the paper failed and alert owner"
+      - name: "Unfaithful digest (hallucination)"
+        examples: "claims not supported by the paper, inverted findings, wrong numbers"
+        detection: "Structured digest cites source sections; blind spot-check sampling; optional grounding check"
+        recovery: "Owner unpublishes/edits; failing posts feed the faithfulness gate"
+        escalation: "If hallucination rate exceeds the gate, halt auto-publish and revisit (open question)"
+      - name: "Duplicate paper"
+        examples: "same arXiv ID seen again across runs or retries"
+        detection: "arXiv_id UNIQUE constraint"
+        recovery: "INSERT ... ON CONFLICT DO NOTHING; skip"
+        escalation: "None"
+      - name: "Partial pipeline failure"
+        examples: "a stage crashes mid-batch"
+        detection: "stage status not advanced for a paper"
+        recovery: "Queue/scheduler resumes from the last good durable intermediate; each stage is idempotent"
+        escalation: "Alert owner after repeated failures on the same paper"
+    degraded_operation: "If the LLM or source is down, no new posts are produced but the existing reader feed and article pages remain fully readable (static reads from D1)."
+  security_model:
+    trust_boundaries: "Owner is trusted (authenticated). Public readers are untrusted and read-only. External content (arXiv papers and LLM output) is untrusted input — LLM output is sanitized before rendering to prevent injection in published posts."
+    auth: "Better Auth, owner-only for the Curation Console; reader side is public with no auth. Cross-subdomain cookie config is a deploy TODO (see open_questions)."
+    secret_handling: "OpenRouter API key, arXiv config, and DB/Better-Auth secrets stored as Cloudflare Workers secrets (via Alchemy/wrangler), never committed to the repo."
+  success_criteria:
+    functional:
+      - "A new arXiv paper flows crawl -> digest (full text) -> restyle -> publish (after Layer 1 manual trigger; after Layer 2 on a schedule)."
+      - "The reader feed lists published posts reverse-chronologically; each article page renders and links to the source paper."
+      - "The owner can change the active style prompt and subsequent posts reflect the new voice."
+      - "No paper is published twice (dedup by arXiv ID)."
+      - "Layer-0 faithfulness gate: <= 10% of a blind-graded sample (~20-30 posts) contains a hallucinated or unsupported claim."
+    non_functional:
+      - "Reader article page first-contentful-paint under 2s on a typical connection (static reads from D1)."
+      - "Each pipeline stage runs as one LLM call per work item to stay within Cloudflare Workers CPU/subrequest limits."
+      - "LLM cost per published post is tracked and stays under a configurable budget threshold."
+  open_questions:
+    - question: "How is full paper text obtained on Cloudflare Workers (PDF binary parsing is hard)?"
+      default_assumption: "Use arXiv HTML/LaTeX source as the full-text channel where available; offload true PDF binary extraction to an external service. Avoid parsing PDF binaries inside a Worker."
+      revisit_trigger: "/map system map / Digestor design, or when a target paper lacks HTML source."
+    - question: "What orchestration substrate runs the multi-stage pipeline (it won't fit one Workers invocation)?"
+      default_assumption: "Cloudflare Queues (one message per paper) for the job queue plus per-stage durable intermediates in D1/R2; Cron Triggers as the producer; consider Workflows for durable multi-step."
+      revisit_trigger: "/map Step 1 system map."
+    - question: "Is Cloudflare D1 suitable for pipeline state under concurrent writes/retries?"
+      default_assumption: "Use D1 for state/results with arXiv_id UNIQUE plus ON CONFLICT dedup and a discovered->digested->styled->published status machine; use Cloudflare Queues (not D1) as the job queue."
+      revisit_trigger: "/map architecture review."
+    - question: "What is the exact faithfulness measurement protocol?"
+      default_assumption: "Blind human spot-check over ~20-30 papers; gate is <= 10% of posts with a hallucinated/unsupported claim."
+      revisit_trigger: "Layer-0 faithfulness spike results."
+    - question: "How are Better Auth cookies handled across reader/console origins on *.workers.dev?"
+      default_assumption: "Use a custom domain, or enable crossSubDomainCookies/cookieCache before deploy."
+      revisit_trigger: "First deploy of console + reader on separate origins."
+  decisions:
+    - decision: "Stack is fixed to the scaffolded better-t-stack (React/Vite/TanStack, Hono on Cloudflare Workers, Drizzle on Cloudflare D1, oRPC, Better Auth, Bun+Turborepo)."
+      reasoning: "The monorepo is already scaffolded and wired; this supersedes the stale 'tech stack not chosen yet' note in openspec/config.yaml."
+      alternatives:
+        - "Treat the stack as open (rejected — it is already built)"
+    - decision: "Database is Cloudflare D1, not LibSQL/Turso."
+      reasoning: "Verified in packages/db (drizzle-orm/d1, env.DB) and drizzle.config (driver d1-http); the libsql deps are vestigial/unused."
+      alternatives:
+        - "Rewire to Turso/LibSQL (deferred unless D1 limits bite)"
+    - decision: "LLM via OpenRouter (OpenAI-compatible API), models swappable per stage via env."
+      reasoning: "Owner has an OpenRouter account and wants to vary models per stage (cheaper model for digest, stronger for stylist)."
+      alternatives:
+        - "Anthropic Claude API"
+        - "OpenAI direct"
+    - decision: "MVP digests full paper text (full-PDF/full-text), not abstract-only."
+      reasoning: "Abstract-only cannot support 'trust without reading the paper'; owner chose maximum fidelity."
+      alternatives:
+        - "Abstract + metadata only"
+        - "arXiv HTML full-text with abstract fallback"
+    - decision: "Auto-publish; owner can unpublish/edit after the fact."
+      reasoning: "Matches the 'continuous' feed; audience-of-one keeps blast radius low; the Layer-0 faithfulness gate mitigates accuracy risk."
+      alternatives:
+        - "Approval queue before publish (deferred; revisit if the faithfulness gate fails)"
+    - decision: "Scheduler deferred to Layer 2; owner triggers runs manually through Layer 1."
+      reasoning: "Automation proves nothing about the bet; a manual 'run now' is enough to validate digest + voice."
+      alternatives:
+        - "Scheduler in the MVP"
+    - decision: "Two capabilities (reading + curation) kept."
+      reasoning: "The surfaces genuinely diverge and the split is cheap in split mode (frame.yaml files only)."
+      alternatives:
+        - "Single capability (revisit at Layer 2)"
+    - decision: "Single active style prompt in MVP; presets/topic voices deferred to Phase 3."
+      reasoning: "Resolves the README/config tension toward the config phasing; keeps the console minimal."
+      alternatives:
+        - "Style-presets library in the MVP"
+  stress_test:
+    - challenge: "The promise 'trust the digest without reading the paper' contradicts an abstract-only digest."
+      angle: product_viability
+      resolution: "Refined: MVP digests full paper text (decision); abstract-only rejected."
+    - challenge: "Auto-publish amplifies the accuracy risk of a wrong digest going live unreviewed."
+      angle: product_viability
+      resolution: "Accepted risk: kept auto-publish + unpublish/edit, mitigated by a Layer-0 faithfulness eval gate (<= 10% hallucination)."
+    - challenge: "The self-rated 70% trustworthy bar is weak and unmeasurable."
+      angle: product_viability
+      resolution: "Refined: replaced with a blind spot-check, gate <= 10% hallucinated claims; added a pre-build faithfulness spike as go/no-go."
+    - challenge: "Voice/curation is a thin moat any competitor can copy."
+      angle: product_viability
+      resolution: "Acknowledged as a known risk; MVP validates personal-leverage value first; a durable moat (accumulated corrections, source coverage) is revisited post-MVP."
+    - challenge: "DB-of-record stated as Turso but the scaffold uses Cloudflare D1."
+      angle: technical_feasibility
+      resolution: "Refined: constraint corrected to Cloudflare D1; libsql deps noted as vestigial."
+    - challenge: "A multi-stage LLM pipeline won't fit one Workers invocation."
+      angle: technical_feasibility
+      resolution: "Marked open_question: Cloudflare Queues/Workflows orchestration + durable per-stage intermediates; Cron as producer; resolved in /map."
+    - challenge: "Per-stage intermediates need durable storage for idempotent retries."
+      angle: technical_feasibility
+      resolution: "Marked open_question: persist each stage output in D1/R2 keyed by arXiv_id with a status state machine."
+    - challenge: "Full-PDF parsing is hard on Cloudflare Workers."
+      angle: technical_feasibility
+      resolution: "Marked open_question: prefer arXiv HTML/LaTeX source; offload binary PDF extraction to an external service."
+    - challenge: "Better Auth cross-subdomain cookies are stubbed out."
+      angle: technical_feasibility
+      resolution: "Marked open_question: custom domain or enable crossSubDomainCookies before deploy."
+    - challenge: "Layer 0 smuggles in tags/polish that don't prove the bet."
+      angle: scope_control
+      resolution: "Refined: dropped tags from Layer 0 (moved to Layer 2)."
+    - challenge: "The Scheduler is not needed for the MVP."
+      angle: scope_control
+      resolution: "Refined: Scheduler deferred to Layer 2; manual 'run now' through Layer 1."
+    - challenge: "Console preview is cuttable from Layer 1."
+      angle: scope_control
+      resolution: "Refined: preview deferred to Layer 1.5."
+    - challenge: "Two capabilities is over-modeling for an audience-of-one."
+      angle: scope_control
+      resolution: "Dismissed: kept two capabilities (cheap in split mode; the surfaces diverge)."
+  quality_dimensions:
+    - dimension: copy-tone
+      criticality: high
+      first_calibration_layer: 0.5
+      rationale: "The controllable voice is the entire differentiator; only a human can judge whether posts read as one consistent, worth-reading voice."
+    - dimension: visual-design
+      criticality: high
+      first_calibration_layer: 0.5
+      rationale: "The reader blog must feel like a personal blog with clean typography, not a database UI; brand/typography need human judgment."
+    - dimension: ux-flow
+      criticality: medium
+      first_calibration_layer: 1.5
+      rationale: "The Console edit -> preview -> publish loop needs human judgment on flow once the console exists."

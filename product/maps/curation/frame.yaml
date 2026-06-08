@@ -1,0 +1,17 @@
+# Capability frame: curation (private console)
+capability: curation
+name: "Curation (private console)"
+primary_user: owner-curator
+scope: "The private backend where the owner controls PaperLens's voice: edit and save the single active style prompt, and trigger ingestion runs manually. The lever that makes the feed feel personal."
+boundary:
+  includes:
+    - "Edit and save the single active style prompt"
+    - "Manual 'run now' ingestion trigger"
+    - "Owner authentication (Better Auth)"
+  excludes:
+    - "Multi-prompt / preset library (Phase 3)"
+    - "Topic-specific voices (Phase 3)"
+    - "Preview before publish (deferred to Layer 1.5)"
+outcome_contract:
+  hypothesis: "Owner-controlled voice makes the feed feel personal and worth reading, not like a generic summarizer."
+  success_metric: "Owner edits the active prompt and subsequent posts reflect the new voice."

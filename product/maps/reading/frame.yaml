@@ -1,0 +1,17 @@
+# Capability frame: reading (reader-facing blog)
+capability: reading
+name: "Reading (reader-facing blog)"
+primary_user: reader
+scope: "The public reader experience: a reverse-chronological feed of published posts and clean per-article pages that link back to the source paper. Land-and-read."
+boundary:
+  includes:
+    - "Reverse-chronological feed of published posts"
+    - "Per-article pages with clean typography"
+    - "Link back to the source paper from each post"
+  excludes:
+    - "Search bar, filter panel, tag cloud"
+    - "Reader accounts, following, saving"
+    - "Comments or social features"
+outcome_contract:
+  hypothesis: "A reader can land on the feed and stay current by just reading, without touching PDFs."
+  success_metric: "Reader can read a styled post end-to-end and reach the source paper in one click."
