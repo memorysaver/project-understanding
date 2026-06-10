@@ -1,6 +1,6 @@
 ---
 name: aep-calibrate
-description: Human alignment checkpoint for any quality dimension during rapid agent development. Use when /reflect identifies a gap between "works" and "right", when the user says "calibrate", "align", "design brief", "capture", or before dispatching .5 alignment layers. Supports calibration types — visual-design, ux-flow, api-surface, data-model, scope-direction, copy-tone, performance-quality. Phase 1 generates a dimension-specific brief; Phase 2 captures decisions into the appropriate artifact.
+description: Human alignment checkpoint for any quality dimension during rapid agent development. Use when /aep-reflect identifies a gap between "works" and "right", when the user says "calibrate", "align", "design brief", "capture", or before dispatching .5 alignment layers. Supports calibration types — visual-design, ux-flow, api-surface, data-model, scope-direction, copy-tone, performance-quality. Phase 1 generates a dimension-specific brief; Phase 2 captures decisions into the appropriate artifact.
 ---
 
 # Calibrate
@@ -10,11 +10,11 @@ Human alignment checkpoint. Agents build to spec, but specs are lossy compressio
 **Where this fits:**
 
 ```
-/reflect (identified alignment gap)
-  → /calibrate           (Phase 1: generate dimension-specific brief)
+/aep-reflect (identified alignment gap)
+  → /aep-calibrate           (Phase 1: generate dimension-specific brief)
   → human explores       (method varies by type — external tools, conversation, code review)
-  → /calibrate capture   (Phase 2: capture decisions into artifact)
-  → /dispatch            (stories dispatched with calibration context)
+  → /aep-calibrate capture   (Phase 2: capture decisions into artifact)
+  → /aep-dispatch            (stories dispatched with calibration context)
 ```
 
 **Session:** Main, interactive with user
@@ -27,11 +27,11 @@ Human alignment checkpoint. Agents build to spec, but specs are lossy compressio
 
 Check how the skill was invoked to determine the calibration dimension:
 
-**Path A — Explicit:** User says `/calibrate visual-design` or `/calibrate api-surface`. Type is given directly.
+**Path A — Explicit:** User says `/aep-calibrate visual-design` or `/aep-calibrate api-surface`. Type is given directly.
 
-**Path B — Routed from `/reflect`:** Reflection classified an observation as a calibration need with a specific dimension. The dimension and observation text are passed as context.
+**Path B — Routed from `/aep-reflect`:** Reflection classified an observation as a calibration need with a specific dimension. The dimension and observation text are passed as context.
 
-**Path C — Ambient:** User says `/calibrate` with no type. Determine the type:
+**Path C — Ambient:** User says `/aep-calibrate` with no type. Determine the type:
 
 1. Check `calibration.plan` in `product-context.yaml` (operational file, both modes) — which dimension is next for the current layer?
 2. Check stories with `calibration_type` set in the current `.5` layer.
@@ -149,7 +149,7 @@ Next steps (you do these):
   2. Explore variations. Pick what feels right.
   3. Save reference files to docs/calibration-references/ (if applicable)
   4. When ready, come back and run:
-     /calibrate capture
+     /aep-calibrate capture
 ```
 
 For visual-design specifically, point to `references/vibe-design-tools.md` for tool guidance.
@@ -160,7 +160,7 @@ Present the brief to the human, then proceed directly to Phase 2. No external ex
 
 ---
 
-## Phase 2: Capture Decisions (`/calibrate capture`)
+## Phase 2: Capture Decisions (`/aep-calibrate capture`)
 
 ### Step 1: Interactive Q&A
 
@@ -233,10 +233,16 @@ Also append to `changelog`:
 ### Step 4: Commit
 
 ```bash
-git pull --ff-only origin main
+# Resolve $BASE (integration branch) — see git-ref "Integration Branch" (override → develop → main)
+BASE=$(git config --get aep.integration-branch 2>/dev/null || true)
+[ -z "$BASE" ] && { git show-ref --verify --quiet refs/heads/develop \
+  || git show-ref --verify --quiet refs/remotes/origin/develop; } && BASE=develop
+BASE=${BASE:-main}
+
+git pull --ff-only origin "$BASE"
 git add calibration/ product-context.yaml
 git commit -m "feat: calibrate <dimension> — <brief summary>"
-git push origin main
+git push origin "$BASE"
 ```
 
 ---
