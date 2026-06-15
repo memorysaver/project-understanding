@@ -7,8 +7,8 @@
 schema: v1
 project: PaperLens
 version: "0.2.0"
-updated_at: "2026-06-15T07:49:21Z"
-dispatch_epoch: 3
+updated_at: "2026-06-15T08:04:38Z"
+dispatch_epoch: 4
 
 # ─── CALIBRATION (/envision plan; /calibrate history) ────────
 calibration:
@@ -641,7 +641,13 @@ stories:
     activity: null
     calibration_type: null
     slice: 4
-    status: pending
+    status: completed
+    assigned_to: pl-011-faithfulness
+    openspec_change: PL-011
+    dispatched_at_epoch: 4
+    completed_at: "2026-06-15T08:04:38Z"
+    pr_url: "https://github.com/memorysaver/project-understanding/pull/10"
+    merge_commit: 8a087a2
     priority: high
     business_value: 9
     complexity: M
@@ -1414,5 +1420,11 @@ changelog:
     type: wrap
     author: agent
     summary: "Wrapped Layer 0 Wave 3 — PL-009+PL-010 reader web (3cfdced #8) + PL-007 inline pipeline (e65fd51 #9) squash-merged. New @paperlens/orchestrator (runOnce, idempotent, dev-only POST /dev/run-once) + reader feed/article routes. Integrated main green: 53/53 tests, 9/9 check-types. Archived PL-007 + PL-009-010 -> specs orchestrator + reader-web. Removed 2 worktrees. Layer 0 walking skeleton CODE COMPLETE (crawl→digest→style→publish→feed→article). Remaining L0: Wave 4 PL-011 (faithfulness harness) then the L0 GATE (real arXiv+OpenRouter run, needs user key)."
+    sections_changed:
+      - stories
+  - date: "2026-06-15"
+    type: wrap
+    author: agent
+    summary: "Wrapped Layer 0 Wave 4 — PL-011 faithfulness harness (8a087a2 #10) squash-merged. scripts/faithfulness-eval.ts (run: pipeline->per-paper bundle + blank grades.csv; score: claim-weighted hallucination rate vs <=10% gate) + docs. Integrated main green: 65/65 tests, 10/10 check-types. Archived PL-011 -> spec faithfulness-eval. ALL 11 LAYER-0 STORIES COMPLETE (code). NEXT = L0 GATE: a real run over ~20-30 arXiv papers with OPENROUTER_API_KEY + blind human grading for the <=10% hallucination go/no-go — PAUSED for user (key + grading). layer_gates[0] stays not_started until that real run executes."
     sections_changed:
       - stories
