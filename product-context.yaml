@@ -1253,7 +1253,7 @@ topology:
     concurrency_limit: 5
     conflict_detection: files_affected_overlap
     retry: "2x same agent -> failure analyst -> fresh agent -> human escalation"
-    autonomous: false
+    autonomous: true
     auto_design: false
     skip_human_eval: none
   handoffs:
@@ -1300,3 +1300,9 @@ changelog:
       - layer_gates
       - cost
       - changelog
+  - date: "2026-06-15"
+    type: dispatch
+    author: human
+    summary: "Enabled autonomous routing (topology.routing.autonomous: true) to run /aep-autopilot for Layer 0 Wave 1 (PL-001 D1 schema, PL-002 llm client). Mode: claude-team, full auto-merge to main; loop will stop after Wave 1. auto_design stays false (both stories well-specified)."
+    sections_changed:
+      - topology

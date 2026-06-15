@@ -49,3 +49,7 @@ coverage
 .cache
 tmp
 temp
+
+# AEP workspace + orchestration (ephemeral, local)
+.feature-workspaces/
+.dev-workflow/
