@@ -1,0 +1,6 @@
+{
+  "extends": "@paperlens/config/tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["bun", "node"]
+  }
+}
