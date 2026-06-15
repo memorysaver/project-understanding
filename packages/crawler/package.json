@@ -1,0 +1,24 @@
+{
+  "name": "@paperlens/crawler",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@paperlens/db": "workspace:*"
+  },
+  "devDependencies": {
+    "@paperlens/config": "workspace:*",
+    "@types/bun": "^1.2.18",
+    "typescript": "catalog:"
+  }
+}

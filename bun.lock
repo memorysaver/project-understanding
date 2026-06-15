@@ -121,6 +121,17 @@
       "name": "@paperlens/config",
       "version": "0.0.0",
     },
+    "packages/crawler": {
+      "name": "@paperlens/crawler",
+      "dependencies": {
+        "@paperlens/db": "workspace:*",
+      },
+      "devDependencies": {
+        "@paperlens/config": "workspace:*",
+        "@types/bun": "^1.2.18",
+        "typescript": "catalog:",
+      },
+    },
     "packages/db": {
       "name": "@paperlens/db",
       "dependencies": {
@@ -722,6 +733,8 @@
     "@paperlens/auth": ["@paperlens/auth@workspace:packages/auth"],
 
     "@paperlens/config": ["@paperlens/config@workspace:packages/config"],
+
+    "@paperlens/crawler": ["@paperlens/crawler@workspace:packages/crawler"],
 
     "@paperlens/db": ["@paperlens/db@workspace:packages/db"],
 
