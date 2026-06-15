@@ -3,6 +3,7 @@
 // selection, structured output, and usage reporting. See docs/technical-spec.md
 // §1 and §4.4.
 export { complete } from "./complete";
+export { LlmError } from "./errors";
 export type {
   CompleteArgs,
   CompleteJsonResult,
