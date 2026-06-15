@@ -1,4 +1,5 @@
 import { protectedProcedure, publicProcedure } from "../index";
+import { getPost, listPosts } from "./posts";
 import type { RouterClient } from "@orpc/server";
 
 export const appRouter = {
@@ -11,6 +12,8 @@ export const appRouter = {
       user: context.session?.user,
     };
   }),
+  listPosts,
+  getPost,
 };
 export type AppRouter = typeof appRouter;
 export type AppRouterClient = RouterClient<typeof appRouter>;
