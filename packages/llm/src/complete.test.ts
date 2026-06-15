@@ -6,13 +6,21 @@ import { z } from "zod";
 // --- Mocks -----------------------------------------------------------------
 // The OpenAI/HTTP client and the env-backed config are both mocked so no real
 // OpenRouter call is ever made and the Workers env import is never reached.
+//
+// Model ids are generated uniquely per run rather than written as literals, so
+// the per-stage resolution test proves the implementation reads them from the
+// (mocked) env config — an implementation that hardcoded a model id could not
+// satisfy these assertions.
+
+const DIGEST_MODEL = `digest-${crypto.randomUUID()}`;
+const STYLE_MODEL = `style-${crypto.randomUUID()}`;
 
 const TEST_CONFIG: LlmConfig = {
   baseURL: "https://openrouter.test/api/v1",
   apiKey: "test-key",
   models: {
-    digest: "vendor/digest-model",
-    style: "vendor/style-model",
+    digest: DIGEST_MODEL,
+    style: STYLE_MODEL,
   },
 };
 
@@ -33,7 +41,9 @@ mock.module("./client", () => ({
 const { complete } = await import("./complete");
 const { LlmError } = await import("./errors");
 
-function chatResponse(content: string, model = "vendor/digest-model") {
+// Echo back the model the implementation requested, so result.model reflects
+// the env-resolved value rather than a fixed literal.
+function chatResponse(content: string, model: string) {
   return {
     model,
     choices: [{ message: { content } }],
@@ -51,7 +61,7 @@ afterEach(() => {
 
 describe("complete() result shape", () => {
   test("returns { content, model, usage }", async () => {
-    create = mock(async () => chatResponse("hello world"));
+    create = mock(async (args: { model: string }) => chatResponse("hello world", args.model));
 
     const result = await complete({
       stage: "digest",
@@ -59,7 +69,7 @@ describe("complete() result shape", () => {
     });
 
     expect(result.content).toBe("hello world");
-    expect(result.model).toBe("vendor/digest-model");
+    expect(result.model).toBe(TEST_CONFIG.models.digest);
     expect(result.usage).toEqual({
       promptTokens: 10,
       completionTokens: 5,
@@ -77,8 +87,10 @@ describe("per-stage model resolution", () => {
     await complete({ stage: "digest", messages: [{ role: "user", content: "x" }] });
     await complete({ stage: "style", messages: [{ role: "user", content: "x" }] });
 
-    expect(create.mock.calls[0]?.[0]).toMatchObject({ model: "vendor/digest-model" });
-    expect(create.mock.calls[1]?.[0]).toMatchObject({ model: "vendor/style-model" });
+    // Assert against the (mocked) env config, not a literal — proves the model
+    // is resolved from env per stage and is not hardcoded.
+    expect(create.mock.calls[0]?.[0]).toMatchObject({ model: TEST_CONFIG.models.digest });
+    expect(create.mock.calls[1]?.[0]).toMatchObject({ model: TEST_CONFIG.models.style });
   });
 });
 
@@ -88,7 +100,9 @@ describe("structured output", () => {
   const schema = z.object({ title: z.string(), score: z.number() });
 
   test("a schema yields a parsed, validated object", async () => {
-    create = mock(async () => chatResponse(JSON.stringify({ title: "Paper", score: 9 })));
+    create = mock(async (args: { model: string }) =>
+      chatResponse(JSON.stringify({ title: "Paper", score: 9 }), args.model),
+    );
 
     const result = await complete({
       stage: "digest",
@@ -97,12 +111,14 @@ describe("structured output", () => {
     });
 
     expect(result.json).toEqual({ title: "Paper", score: 9 });
-    expect(result.model).toBe("vendor/digest-model");
+    expect(result.model).toBe(TEST_CONFIG.models.digest);
     expect(result.usage.totalTokens).toBe(15);
   });
 
   test("requests JSON output when a schema is given", async () => {
-    create = mock(async () => chatResponse(JSON.stringify({ title: "P", score: 1 })));
+    create = mock(async (args: { model: string }) =>
+      chatResponse(JSON.stringify({ title: "P", score: 1 }), args.model),
+    );
 
     await complete({
       stage: "digest",
@@ -116,7 +132,9 @@ describe("structured output", () => {
   });
 
   test("an invalid (schema-mismatched) response throws LlmError", async () => {
-    create = mock(async () => chatResponse(JSON.stringify({ title: "Paper" })));
+    create = mock(async (args: { model: string }) =>
+      chatResponse(JSON.stringify({ title: "Paper" }), args.model),
+    );
 
     const promise = complete({
       stage: "digest",
@@ -128,7 +146,7 @@ describe("structured output", () => {
   });
 
   test("a non-JSON response throws LlmError", async () => {
-    create = mock(async () => chatResponse("not json at all"));
+    create = mock(async (args: { model: string }) => chatResponse("not json at all", args.model));
 
     const promise = complete({
       stage: "digest",
