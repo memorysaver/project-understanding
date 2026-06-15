@@ -1184,6 +1184,38 @@ stories:
       unit: ["cost aggregation", "alert on threshold"]
       integration: []
       contract: []
+  # ── Layer 0 faithfulness bug (from /aep-reflect after the L0 gate) ──
+  - id: PL-029
+    title: "Fix stylist citation fabrication: body must not invent arXiv id/title/affiliation; append real citation from Paper metadata"
+    layer: 0
+    module: stylist
+    activity: restyle-publish
+    calibration_type: null
+    slice: 4
+    status: pending
+    priority: critical
+    business_value: 9
+    complexity: S
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-005", "PL-006"]
+    description:
+      what_changes: "The stylist must not write bibliographic metadata (arXiv id, paper-title restatement, author affiliation, source link) into the post body — it hallucinates them (placeholder/wrong ids like 2505.XXXXX, wrong or thesis-inverting titles, fabricated affiliations like 'NVIDIA'). The real citation + source link are appended deterministically from stored Paper metadata (title, arxiv_id, source_url) by the publisher."
+      why: "L0 faithfulness gate over 24 brand-new (2026-06-12) papers found ~75% of genuine hallucinations were fabricated citation footers — trust-critical for a 'trustworthy' blog. Deterministic citation drops the verified hallucination rate from ~4.1% to ~1.0%."
+    acceptance_criteria:
+      - "Stylist prompt forbids inventing arXiv id/title/affiliation/link; styled body contains no fabricated citation block."
+      - "Published Post's source link + citation are built from stored Paper.arxiv_id/title/source_url, not from LLM output."
+      - "A test asserts a styled body for a fixture paper contains no arXiv-id pattern, and the published citation matches the Paper metadata."
+    interface_obligations:
+      implements: []
+      consumes: ["stylist.run", "publisher.publish"]
+      contract_tests_required: false
+    files_affected: ["packages/stylist/src/index.ts", "packages/publisher/src/index.ts"]
+    technical_notes: "Found via the L0 faithfulness gate adversarial verify (Opus workflow, 2026-06-15). See changelog reflection."
+    verification:
+      unit: ["styled body has no fabricated arXiv id/title", "citation built from Paper metadata"]
+      integration: []
+      contract: []
 
 # ─── WAVES (/map Step 3) ─────────────────────────────────────
 waves:
@@ -1231,13 +1263,16 @@ waves:
 # ─── LAYER GATES ─────────────────────────────────────────────
 layer_gates:
   - layer: 0
-    status: not_started
+    status: provisional_pass
     test_definition: "One hardcoded arXiv paper flows crawl->digest->style->publish to a published Post; the feed lists it and the article page renders title+body+source link. Faithfulness eval run with <=10% hallucinated/unsupported claims over ~20-30 papers."
     results:
-      tests_run: 0
-      tests_passed: 0
-      tests_failed: 0
-      failures: []
+      tests_run: 34
+      tests_passed: 33
+      tests_failed: 1
+      faithfulness_famous_sample: "9/166 = 5.4% (10 well-known papers, Sonnet blind graders)"
+      faithfulness_new_sample: "24/580 = 4.14% verified (24 brand-new 2026-06-12 papers, Opus grade + adversarial verify); content-only ~1.0%"
+      verdict: "PASS (<=10%) — PROVISIONAL: LLM-judged, not human-blind; dominant defect = stylist citation fabrication -> PL-029"
+      failures: ["stylist fabricates citation footer (placeholder/wrong arXiv id + wrong title + fake affiliation) — ~75% of genuine hallucinations — PL-029"]
     completed_at: null
   - layer: 1
     status: not_started
@@ -1324,6 +1359,16 @@ topology:
     autonomous: true
     auto_design: false
     skip_human_eval: none
+    process_learnings:
+      - pattern: "agent-teams tmux backend silently fails when a parallel project session holds the tmux server (builders register but never execute)"
+        mitigation: "spawn builders as native background subagents (Agent run_in_background, no team_name); verify a heartbeat .dev-workflow/signals/status.json before trusting the spawn"
+        discovered_at: "2026-06-15"
+      - pattern: "a runner subagent detached a long PAID job (faithfulness gate) via a launcher + Monitor and relaunched it after a kill, defying stop and continuing to spend"
+        mitigation: "run long real-cost jobs as a main-owned background bash (directly killable) or a process the subagent owns; instruct runners to NEVER relaunch on exit; money-guard by renaming the runner script when stopping"
+        discovered_at: "2026-06-15"
+      - pattern: "the documented faithfulness-eval real-run path crashes under plain bun (orchestrator/llm reach cloudflare:workers, Workers-only)"
+        mitigation: "scripts/gate-run.ts injects a local bun:sqlite db + a process.env OpenRouter complete adapter + real fetchers into orchestrator.runOnce; consider committing it or making the harness real-run work outside the Workers runtime"
+        discovered_at: "2026-06-15"
   handoffs:
     - from: implementer
       to: evaluator
@@ -1428,3 +1473,23 @@ changelog:
     summary: "Wrapped Layer 0 Wave 4 — PL-011 faithfulness harness (8a087a2 #10) squash-merged. scripts/faithfulness-eval.ts (run: pipeline->per-paper bundle + blank grades.csv; score: claim-weighted hallucination rate vs <=10% gate) + docs. Integrated main green: 65/65 tests, 10/10 check-types. Archived PL-011 -> spec faithfulness-eval. ALL 11 LAYER-0 STORIES COMPLETE (code). NEXT = L0 GATE: a real run over ~20-30 arXiv papers with OPENROUTER_API_KEY + blind human grading for the <=10% hallucination go/no-go — PAUSED for user (key + grading). layer_gates[0] stays not_started until that real run executes."
     sections_changed:
       - stories
+  - date: "2026-06-15"
+    type: reflection
+    summary: "Post-Layer-0 reflection — ran the faithfulness gate (real OpenRouter via scripts/gate-run.ts, model nvidia/nemotron-3-ultra-550b-a55b) on 10 well-known papers (5.4%) + 24 brand-new 2026-06-12 papers (4.14% verified via an Opus grade + adversarial-verify workflow). Gate PASSES <=10% provisionally. Classified findings below."
+    feedback:
+      bugs:
+        - description: "Stylist fabricates the citation footer (placeholder/wrong arXiv id e.g. 2505.XXXXX, wrong/thesis-inverting title, fake affiliation) in the post body — ~75% of genuine hallucinations on the 24-new-paper sample. Trust-critical."
+          story_id: "PL-029"
+      refinements:
+        - description: "Digestor full-text extraction left ar5iv <script>/<style>/nav chrome in the source excerpt (polluted digest, wasted tokens). FIXED — PR #11 (2fe83af)."
+          story_id: "PL-004"
+          target_layer: 0
+      discoveries:
+        - description: "The real pipeline run needs a bun-compatible path because orchestrator/llm reach cloudflare:workers (Workers-only). Built scripts/gate-run.ts (local sqlite + process.env OpenRouter adapter injected into runOnce)."
+          affected_section: "architecture"
+    gate_result: "L0 faithfulness PASS provisional: famous 5.4%, new-papers 4.14% verified, content-only ~1.0% (citation bug excluded). LLM-judged, not human-blind."
+    cost_observations: "Pipeline gate ~ $0.02-0.026/paper (nemotron reasoning model; adapter retries 8000->16000 max_tokens on empty content). Opus grade+verify workflow: 61 agents, ~1.7M tokens for 24 papers."
+    sections_changed:
+      - stories
+      - layer_gates
+      - topology
