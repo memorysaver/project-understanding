@@ -1,6 +1,7 @@
 import type { CompleteArgs, CompleteJsonResult, CompleteTextResult, LlmUsage } from "./types";
 import type { ChatCompletion } from "openai/resources/chat/completions";
 import type { ZodType, infer as zInfer } from "zod";
+import { APIError } from "openai";
 import { createClient } from "./client";
 import { getLlmConfig } from "./config";
 import { LlmError } from "./errors";
@@ -11,6 +12,28 @@ function toUsage(usage: ChatCompletion["usage"]): LlmUsage {
     completionTokens: usage?.completion_tokens ?? 0,
     totalTokens: usage?.total_tokens ?? 0,
   };
+}
+
+/**
+ * Map a provider error to a typed `LlmError`. A non-2xx response (`APIError`)
+ * carries its HTTP status and is marked retryable so callers can apply
+ * backoff/retry; connection/timeout failures (no status) are retryable too.
+ */
+function toLlmError(cause: unknown): LlmError {
+  if (cause instanceof LlmError) {
+    return cause;
+  }
+
+  if (cause instanceof APIError) {
+    const status = typeof cause.status === "number" ? cause.status : undefined;
+    return new LlmError(`OpenRouter request failed: ${cause.message}`, {
+      status,
+      retryable: true,
+      cause,
+    });
+  }
+
+  return new LlmError("OpenRouter request failed", { retryable: true, cause });
 }
 
 /**
@@ -37,11 +60,16 @@ export async function complete<TSchema extends ZodType>(
   const model = config.models[args.stage];
   const client = createClient(config);
 
-  const completion = await client.chat.completions.create({
-    model,
-    messages: args.messages,
-    ...(args.schema ? { response_format: { type: "json_object" } } : {}),
-  });
+  let completion: ChatCompletion;
+  try {
+    completion = await client.chat.completions.create({
+      model,
+      messages: args.messages,
+      ...(args.schema ? { response_format: { type: "json_object" } } : {}),
+    });
+  } catch (cause) {
+    throw toLlmError(cause);
+  }
 
   const content = completion.choices[0]?.message?.content ?? "";
   const usage = toUsage(completion.usage);
