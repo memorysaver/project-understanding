@@ -1,0 +1,27 @@
+{
+  "name": "@paperlens/digestor",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@paperlens/db": "workspace:*",
+    "@paperlens/llm": "workspace:*",
+    "drizzle-orm": "^0.45.1",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@paperlens/config": "workspace:*",
+    "@types/bun": "^1.3.14",
+    "typescript": "catalog:"
+  }
+}

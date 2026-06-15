@@ -138,6 +138,20 @@
         "typescript": "catalog:",
       },
     },
+    "packages/digestor": {
+      "name": "@paperlens/digestor",
+      "dependencies": {
+        "@paperlens/db": "workspace:*",
+        "@paperlens/llm": "workspace:*",
+        "drizzle-orm": "^0.45.1",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@paperlens/config": "workspace:*",
+        "@types/bun": "^1.3.14",
+        "typescript": "catalog:",
+      },
+    },
     "packages/env": {
       "name": "@paperlens/env",
       "version": "0.0.0",
@@ -724,6 +738,8 @@
     "@paperlens/config": ["@paperlens/config@workspace:packages/config"],
 
     "@paperlens/db": ["@paperlens/db@workspace:packages/db"],
+
+    "@paperlens/digestor": ["@paperlens/digestor@workspace:packages/digestor"],
 
     "@paperlens/env": ["@paperlens/env@workspace:packages/env"],
 
