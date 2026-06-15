@@ -7,7 +7,7 @@ import * as schema from "@paperlens/db/schema/paperlens";
 import { seedDefaultStylePrompt, DEFAULT_STYLE_PROMPT } from "@paperlens/db/seed";
 import type { LlmMessage } from "@paperlens/llm";
 import type { complete as Complete } from "@paperlens/llm";
-import { run } from "./run";
+import { run, stripFabricatedCitation } from "./run";
 
 // Locate the D1 migration that ships with @paperlens/db relative to its seed
 // module (the package's `./*` export only maps `.ts`, not the `.sql` file).
@@ -61,7 +61,11 @@ function mockComplete(body: string) {
   const calls: { stage: string; messages: LlmMessage[] }[] = [];
   const fn = (async (args: { stage: string; messages: LlmMessage[] }) => {
     calls.push({ stage: args.stage, messages: args.messages });
-    return { content: body, model: "style-model", usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 } };
+    return {
+      content: body,
+      model: "style-model",
+      usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 },
+    };
   }) as unknown as typeof Complete;
   return { fn, calls };
 }
@@ -98,8 +102,8 @@ describe("PL-005 stylist", () => {
     const call = llm.calls[0]!;
     expect(call.stage).toBe("style");
     const system = call.messages.find((m) => m.role === "system")!;
-    expect(system.content).toBe(DEFAULT_STYLE_PROMPT);
-    expect(system.content).toBe(active.content);
+    expect(system.content).toContain(DEFAULT_STYLE_PROMPT);
+    expect(system.content).toContain(active.content);
   });
 
   // Unit: it uses the ACTIVE prompt even after the default is replaced — proves
@@ -108,8 +112,13 @@ describe("PL-005 stylist", () => {
     const db = await makeDb();
     await seedDefaultStylePrompt(db);
     await db.transaction(async (tx) => {
-      await tx.update(schema.stylePrompts).set({ isActive: false }).where(eq(schema.stylePrompts.isActive, true));
-      await tx.insert(schema.stylePrompts).values({ content: "A sharper, terser voice.", isActive: true });
+      await tx
+        .update(schema.stylePrompts)
+        .set({ isActive: false })
+        .where(eq(schema.stylePrompts.isActive, true));
+      await tx
+        .insert(schema.stylePrompts)
+        .values({ content: "A sharper, terser voice.", isActive: true });
     });
     await seedDigestedPaper(db, "2401.00003");
     const llm = mockComplete("styled");
@@ -117,7 +126,7 @@ describe("PL-005 stylist", () => {
     await run({ db, complete: llm.fn }, { paperId: "2401.00003" });
 
     const system = llm.calls[0]!.messages.find((m) => m.role === "system")!;
-    expect(system.content).toBe("A sharper, terser voice.");
+    expect(system.content).toContain("A sharper, terser voice.");
   });
 
   // AC2: Paper advances to status `styled` on success.
@@ -166,5 +175,48 @@ describe("PL-005 stylist", () => {
       await db.select().from(schema.papers).where(eq(schema.papers.arxivId, "2401.00006"))
     )[0]!;
     expect(paper.status).toBe("digested");
+  });
+
+  // PL-029 unit: a trailing fabricated citation footer is stripped; clean bodies
+  // are left untouched.
+  test("stripFabricatedCitation removes a trailing fabricated citation footer", () => {
+    const withFooter =
+      "# Great Title\n\nThe paper shows X and Y. A solid result.\n\n---\n\n" +
+      '**Original paper**: "Some Wrong Title." arXiv:2505.XXXXX\n' +
+      "[Read the paper](https://arxiv.org/abs/2505.99999)";
+    const cleaned = stripFabricatedCitation(withFooter);
+    expect(cleaned).toContain("The paper shows X and Y. A solid result.");
+    expect(cleaned).not.toMatch(/arxiv/i);
+    expect(cleaned).not.toContain("2505.XXXXX");
+    expect(cleaned).not.toContain("Original paper");
+    expect(cleaned.endsWith("A solid result.")).toBe(true);
+  });
+
+  test("stripFabricatedCitation leaves a clean body unchanged", () => {
+    const clean = "# Title\n\nA readable article about attention.\n\nThe end.";
+    expect(stripFabricatedCitation(clean)).toBe(clean);
+  });
+
+  // PL-029 integration: the published body never carries a fabricated arXiv id /
+  // title / link, and the model is instructed not to invent metadata.
+  test("strips a fabricated citation footer from the published styled body", async () => {
+    const db = await makeDb();
+    await seedDefaultStylePrompt(db);
+    await seedDigestedPaper(db, "2401.00007");
+    const body =
+      "# A Clear Explanation\n\nThis work introduces a faster method and validates it.\n\n---\n\n" +
+      '**Original paper**: "Totally Made Up Title." arXiv:2505.12345 (hypothetical)\n' +
+      "[Read the paper](https://arxiv.org/abs/2505.12345)";
+    const llm = mockComplete(body);
+
+    const result = await run({ db, complete: llm.fn }, { paperId: "2401.00007" });
+
+    expect(result.body).toContain("This work introduces a faster method and validates it.");
+    expect(result.body).not.toMatch(/arxiv/i);
+    expect(result.body).not.toContain("2505.12345");
+    expect(result.body).not.toContain("Made Up Title");
+
+    const system = llm.calls[0]!.messages.find((m) => m.role === "system")!;
+    expect(system.content).toContain("Never invent or guess an arXiv");
   });
 });
