@@ -48,3 +48,21 @@ export const digests = sqliteTable(
   },
   (table) => [index("digests_paperId_idx").on(table.paperId)],
 );
+
+// StylePrompt — the voice/style instruction used by the stylist stage.
+// Invariant (MVP): exactly one row with is_active = true. Updating the active
+// prompt is a transactional flip (tech-spec §2). One default is seeded.
+export const stylePrompts = sqliteTable("style_prompts", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  content: text("content").notNull(),
+  isActive: integer("is_active", { mode: "boolean" }).default(false).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" })
+    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+    .notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+    .$onUpdate(() => /* @__PURE__ */ new Date())
+    .notNull(),
+});
