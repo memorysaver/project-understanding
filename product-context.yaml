@@ -1230,7 +1230,14 @@ stories:
     activity: ingest-digest
     calibration_type: null
     slice: 4
-    status: pending
+    status: completed
+    assigned_to: pl-030-abstract-only
+    openspec_change: null
+    dispatched_at_epoch: 6
+    completed_at: "2026-06-15T14:54:35Z"
+    pr_url: "https://github.com/memorysaver/project-understanding/pull/13"
+    merge_commit: ac110d4
+    completion_note: "Strict-ground approach (user decision): detect abstract-only (fetcher returns abstract verbatim) -> append ABSTRACT_ONLY_GUARD forbidding invented numbers. Re-run pending to confirm the ~22% abstract-only rate drops. source_kind persistence + orchestrator deferral deferred."
     priority: critical
     business_value: 10
     complexity: M
@@ -1310,7 +1317,7 @@ layer_gates:
       grader_caveat: "The earlier new-sample 4.14% (Opus grade + adversarial verify) was OPTIMISTIC — the verify's benefit-of-doubt to claims 'beyond the excerpt' masked abstract-only fabrication; a strict single-pass grader gives ~22% on the same set."
       verdict: "NOT PASSED — gate fails on abstract-only papers (the product's core input). Faithful only when full text is available. Blocked on PL-030 (+ PL-029 citation fix landed)."
       failures:
-        - "abstract-only digests fabricate quantitative specifics (~22%) — PL-030"
+        - "abstract-only digests fabricate quantitative specifics (~22%) — fix landed PL-030 (ac110d4); re-run pending to confirm the drop"
         - "stylist citation fabrication — FIXED (PL-029)"
     completed_at: null
   - layer: 1
@@ -1551,6 +1558,13 @@ changelog:
           story_id: "PL-030"
     gate_result: "L0 faithfulness NOT PASSED — good with full text (~1-5%), poor abstract-only (~22%). layer_gates[0] -> conditional_fail. Blocked on PL-030."
     process_note: "Grader methodology matters: an adversarial-verify step that gives 'benefit of the doubt to claims beyond the excerpt' is WRONG for abstract-only papers (there is no full text to ground them) — it masked the fabrication. Re-grade abstract-only against the abstract strictly."
+    sections_changed:
+      - stories
+      - layer_gates
+  - date: "2026-06-15"
+    type: wrap
+    author: agent
+    summary: "Fixed PL-030 (abstract-only fabrication) — PR #13 (ac110d4) squash-merged. User chose the strict-ground approach: digestor detects abstract-only (default fetcher returns the abstract verbatim) and appends ABSTRACT_ONLY_GUARD forbidding invented numbers/benchmarks/baselines; user message labeled 'Abstract (full text unavailable)'. 9 digestor tests (2 new) + repo-wide 71 tests green. Re-run on the abstract-only sample still pending to confirm the ~22% rate drops; source_kind persistence + orchestrator deferral deferred."
     sections_changed:
       - stories
       - layer_gates
