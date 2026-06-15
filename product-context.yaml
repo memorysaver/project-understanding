@@ -1237,7 +1237,7 @@ stories:
     completed_at: "2026-06-15T14:54:35Z"
     pr_url: "https://github.com/memorysaver/project-understanding/pull/13"
     merge_commit: ac110d4
-    completion_note: "Strict-ground approach (user decision): detect abstract-only (fetcher returns abstract verbatim) -> append ABSTRACT_ONLY_GUARD forbidding invented numbers. Re-run pending to confirm the ~22% abstract-only rate drops. source_kind persistence + orchestrator deferral deferred."
+    completion_note: "Strict-ground approach (user decision): detect abstract-only (fetcher returns abstract verbatim) -> append ABSTRACT_ONLY_GUARD forbidding invented numbers. CONFIRMED 2026-06-15: a forced-abstract-only re-run of the same 25 papers dropped 22.06% -> 8.62% (Sonnet strict, under the 10% bar). Residual tail (2/25 at 35-50%) + source_kind persistence + orchestrator deferral handed to PL-031."
     priority: critical
     business_value: 10
     complexity: M
@@ -1260,6 +1260,44 @@ stories:
     verification:
       unit: ["abstract-only digest invents no numbers", "full-text vs abstract-only detection"]
       integration: []
+      contract: []
+
+  - id: PL-031
+    title: "Defer or flag abstract-only papers — never publish an abstract-only digest blind"
+    layer: 1
+    module: orchestrator
+    activity: ingest-digest
+    calibration_type: null
+    slice: null
+    status: pending
+    assigned_to: null
+    openspec_change: null
+    dispatched_at_epoch: null
+    completed_at: null
+    pr_url: null
+    merge_commit: null
+    priority: high
+    business_value: 9
+    complexity: M
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-030"]
+    description:
+      what_changes: "Persist a source_kind (full_text | abstract) on each Digest and have the orchestrator act on it: when a paper is abstract-only, DEFER it (re-try once ar5iv renders full text, typically within ~2 days) or publish it FLAGGED as a lower-confidence abstract-only digest — never silently publish it as a normal post. The defer-vs-flag policy is recorded."
+      why: "L0 gate (2026-06-15, conditional pass): abstract-only fabrication is 8.62% after PL-030 — under the 10% bar on average, but with a tail (2/25 papers at 35-50%, injecting canonical dataset names / 'outperforms baselines'). The corpus average masks per-paper risk: a reader trusting one badly-fabricated post is misled even though the corpus passes. Abstract-only is transient (full text usually arrives within ~2 days), so deferring fresh papers sidesteps the risk and protects the 'trust without reading' bet."
+    acceptance_criteria:
+      - "Digest persists source_kind (full_text | abstract); a paper digested from abstract-only is queryable as such."
+      - "Orchestrator does not publish an abstract-only paper as a normal post: it either defers (re-queues for retry when full text is available) or publishes with an explicit lower-confidence flag (policy recorded)."
+      - "A paper that was abstract-only and later gains full text is re-digested from the full text before/at publish."
+    interface_obligations:
+      implements: []
+      consumes: ["digestor.run", "orchestrator.runOnce"]
+      contract_tests_required: false
+    files_affected: ["packages/digestor/src/index.ts", "packages/orchestrator/src/index.ts", "packages/db/src/schema/paperlens.ts"]
+    technical_notes: "Carries the deferred half of PL-030 (source_kind persistence + orchestrator deferral). source_kind threads digestor -> digest row. Deferral policy: requeue abstract-only papers with a backoff until fetchArxivFullText returns more than the abstract."
+    verification:
+      unit: ["digest records source_kind", "orchestrator defers/flags abstract-only paper"]
+      integration: ["abstract-only paper is not published as a normal post"]
       contract: []
 
 # ─── WAVES (/map Step 3) ─────────────────────────────────────
@@ -1286,8 +1324,8 @@ waves:
     theme: "Establish look & voice (calibration)"
   - layer: 1
     wave: 1
-    stories: ["PL-014", "PL-017", "PL-018"]
-    theme: "Auth + active-prompt stylist + queue pipeline"
+    stories: ["PL-014", "PL-017", "PL-018", "PL-031"]
+    theme: "Auth + active-prompt stylist + queue pipeline + abstract-only deferral"
   - layer: 1
     wave: 2
     stories: ["PL-015", "PL-019", "PL-021"]
@@ -1308,18 +1346,19 @@ waves:
 # ─── LAYER GATES ─────────────────────────────────────────────
 layer_gates:
   - layer: 0
-    status: conditional_fail
+    status: conditional_pass
     test_definition: "One hardcoded arXiv paper flows crawl->digest->style->publish to a published Post; the feed lists it and the article page renders title+body+source link. Faithfulness eval run with <=10% hallucinated/unsupported claims over ~20-30 papers."
     results:
-      faithfulness_full_text: "GOOD (~1-5%): with arXiv full text the pipeline is faithful (e.g. the Transformer post was accurate). Famous-paper sample 9/166 = 5.4% (Sonnet blind graders)."
-      faithfulness_abstract_only: "POOR (~22%): on 25 brand-new abstract-only papers the pipeline fabricates specific benchmark numbers/tables absent from the abstract (e.g. RepFusion 2606.14700 invented GenEval/DPG-Bench scores). -> PL-030."
+      faithfulness_full_text: "GOOD (~1-5%): with arXiv full text the pipeline is faithful (e.g. the Transformer post was accurate). Famous-paper sample 9/166 = 5.4% (Sonnet blind graders). Steady state — arXiv papers get ar5iv full text within ~2 days of posting."
+      faithfulness_abstract_only: "PASS-with-tail (8.62%) AFTER PL-030: a forced-abstract-only isolation re-run of the same 25 papers graded 28/325 = 8.62% (Sonnet, strict) vs 133/603 = 22.06% before the fix. ABSTRACT_ONLY_GUARD roughly halves both the fabrication rate and the number of specific claims made. CAVEAT: the corpus average hides a tail — 2/25 papers still 35-50% fabricated (2606.14650, 2606.14699) by injecting canonical domain specifics (standard dataset names like SAPIEN/PartNet-Mobility, 'outperforms baselines'). -> deferred to PL-031."
       citation_fabrication: "FIXED by PL-029 (4bea861) — 0/25 fabricated citations in the re-run (mechanically verified)."
-      grader_caveat: "The earlier new-sample 4.14% (Opus grade + adversarial verify) was OPTIMISTIC — the verify's benefit-of-doubt to claims 'beyond the excerpt' masked abstract-only fabrication; a strict single-pass grader gives ~22% on the same set."
-      verdict: "NOT PASSED — gate fails on abstract-only papers (the product's core input). Faithful only when full text is available. Blocked on PL-030 (+ PL-029 citation fix landed)."
+      confound_note: "The naive PL-030 re-run was INVALID: re-running the same ids 2 days later, ar5iv had rendered full text for 23/25 (no longer abstract-only). Isolated the fix with a FORCE_ABSTRACT_ONLY flag in scripts/gate-run.ts (full-text fetcher returns the abstract verbatim) so the guard always fires — that gave the clean 8.62% apples-to-apples vs the 22% baseline."
+      grader_caveat: "The earlier new-sample 4.14% (Opus grade + adversarial verify) was OPTIMISTIC — the verify's benefit-of-doubt to claims 'beyond the excerpt' masked abstract-only fabrication; a strict single-pass grader gives ~22% pre-fix on the same set."
+      verdict: "CONDITIONAL PASS (user decision 2026-06-15). Full-text path PASSES (~1-5%, the steady state). Abstract-only improved 22% -> 8.62% (under the 10% bar) but retains a bad tail, so abstract-only papers must be DEFERRED/flagged rather than published blind (PL-031). 'Trust without reading' holds for full-text; protected-by-deferral for abstract-only."
       failures:
-        - "abstract-only digests fabricate quantitative specifics (~22%) — fix landed PL-030 (ac110d4); re-run pending to confirm the drop"
+        - "abstract-only quantitative fabrication 22.06% -> 8.62% (PL-030, ac110d4, confirmed via FORCE_ABSTRACT_ONLY isolation re-run). Residual tail deferred to PL-031 (don't publish abstract-only blind)."
         - "stylist citation fabrication — FIXED (PL-029)"
-    completed_at: null
+    completed_at: "2026-06-15"
   - layer: 1
     status: not_started
     test_definition: "Owner signs in, edits the active style prompt, triggers a manual 'run now' over a batch via the queue, and sees new deduped posts in the owner's voice; unpublishing a post removes it from the feed."
@@ -1567,4 +1606,19 @@ changelog:
     summary: "Fixed PL-030 (abstract-only fabrication) — PR #13 (ac110d4) squash-merged. User chose the strict-ground approach: digestor detects abstract-only (default fetcher returns the abstract verbatim) and appends ABSTRACT_ONLY_GUARD forbidding invented numbers/benchmarks/baselines; user message labeled 'Abstract (full text unavailable)'. 9 digestor tests (2 new) + repo-wide 71 tests green. Re-run on the abstract-only sample still pending to confirm the ~22% rate drops; source_kind persistence + orchestrator deferral deferred."
     sections_changed:
       - stories
+      - layer_gates
+  - date: "2026-06-15"
+    type: reflection
+    author: agent
+    summary: "L0 faithfulness gate CONFIRMED + closed as a conditional pass. PL-030 fix validated by a forced-abstract-only isolation re-run (same 25 papers): 22.06% -> 8.62% (Sonnet strict, under the 10% bar). Discovered + corrected a confound first: re-running the same ids 2 days later, ar5iv had rendered full text for 23/25 (no longer abstract-only), so a naive re-run measured the full-text path, not the guard. Added a FORCE_ABSTRACT_ONLY flag to scripts/gate-run.ts to isolate the abstract-only path. Residual tail (2/25 papers 35-50%, canonical-dataset-name injection) is real; user chose conditional pass + defer abstract-only. layer_gates[0] -> conditional_pass; created PL-031 (defer/flag abstract-only, never publish blind)."
+    feedback:
+      refinements:
+        - description: "Abstract-only papers retain a fabrication tail even after PL-030; defer or flag them rather than publish blind."
+          story_id: "PL-031"
+          target_layer: 1
+    gate_result: "L0 faithfulness CONDITIONAL PASS — full-text ~1-5% (PASS), abstract-only 8.62% after PL-030 (PASS-with-tail), protected by deferral (PL-031)."
+    process_note: "Time-dependent inputs (ar5iv full-text availability) confound re-running the same ids across days. Isolate a fix with a forced-mode flag (e.g. FORCE_ABSTRACT_ONLY) rather than trusting that the same ids reproduce the same input."
+    sections_changed:
+      - stories
+      - waves
       - layer_gates

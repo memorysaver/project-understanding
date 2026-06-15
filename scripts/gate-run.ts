@@ -277,6 +277,14 @@ async function makeDb() {
 // Run one paper through the real pipeline -> assemble a PaperBundle
 // ---------------------------------------------------------------------------
 
+// When FORCE_ABSTRACT_ONLY=1 the gate returns the abstract as the "full text",
+// so the digestor's abstractOnly path (and the PL-030 guard) always fires —
+// isolates the abstract-only fix even after ar5iv renders the paper's full text.
+const forceAbstractOnly = process.env.FORCE_ABSTRACT_ONLY === "1";
+const fetchFullTextForGate: typeof fetchArxivFullText = forceAbstractOnly
+  ? async (paper) => paper.abstract
+  : fetchArxivFullText;
+
 async function runPaper(
   db: NonNullable<RunOnceDeps["db"]>,
   arxivId: string,
@@ -286,7 +294,7 @@ async function runPaper(
   const post = await runOnce(arxivId, {
     db,
     complete: completeAdapter,
-    fetchFullText: fetchArxivFullText,
+    fetchFullText: fetchFullTextForGate,
     // fetcher defaults to global fetch in the crawler -> real arXiv API.
   });
 
@@ -301,7 +309,7 @@ async function runPaper(
   }
 
   // Re-fetch the full text the same way the digestor did (it isn't persisted).
-  const fullText = await fetchArxivFullText(paper);
+  const fullText = await fetchFullTextForGate(paper);
 
   return {
     arxivId,
