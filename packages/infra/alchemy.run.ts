@@ -31,6 +31,10 @@ export const server = await Worker("server", {
     CORS_ORIGIN: alchemy.env.CORS_ORIGIN!,
     BETTER_AUTH_SECRET: alchemy.secret.env.BETTER_AUTH_SECRET!,
     BETTER_AUTH_URL: alchemy.env.BETTER_AUTH_URL!,
+    OPENROUTER_BASE_URL: alchemy.env.OPENROUTER_BASE_URL!,
+    OPENROUTER_API_KEY: alchemy.secret.env.OPENROUTER_API_KEY!,
+    OPENROUTER_MODEL_DIGEST: alchemy.env.OPENROUTER_MODEL_DIGEST!,
+    OPENROUTER_MODEL_STYLE: alchemy.env.OPENROUTER_MODEL_STYLE!,
   },
   dev: {
     port: 3000,
