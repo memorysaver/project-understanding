@@ -7,8 +7,8 @@
 schema: v1
 project: PaperLens
 version: "0.2.0"
-updated_at: "2026-06-15T03:28:42Z"
-dispatch_epoch: 1
+updated_at: "2026-06-15T07:33:25Z"
+dispatch_epoch: 2
 
 # ─── CALIBRATION (/envision plan; /calibrate history) ────────
 calibration:
@@ -352,7 +352,13 @@ stories:
     activity: connect-source
     calibration_type: null
     slice: 2
-    status: pending
+    status: completed
+    assigned_to: pl-003-crawler
+    openspec_change: PL-003
+    dispatched_at_epoch: 2
+    completed_at: "2026-06-15T07:33:25Z"
+    pr_url: "https://github.com/memorysaver/project-understanding/pull/4"
+    merge_commit: 0d272ef
     priority: critical
     business_value: 8
     complexity: M
@@ -382,7 +388,13 @@ stories:
     activity: ingest-digest
     calibration_type: null
     slice: 2
-    status: pending
+    status: completed
+    assigned_to: pl-004-digestor
+    openspec_change: PL-004
+    dispatched_at_epoch: 2
+    completed_at: "2026-06-15T07:33:25Z"
+    pr_url: "https://github.com/memorysaver/project-understanding/pull/5"
+    merge_commit: dddfc7e
     priority: critical
     business_value: 10
     complexity: L
@@ -413,7 +425,13 @@ stories:
     activity: restyle-publish
     calibration_type: null
     slice: 2
-    status: pending
+    status: completed
+    assigned_to: pl-005-stylist
+    openspec_change: PL-005
+    dispatched_at_epoch: 2
+    completed_at: "2026-06-15T07:33:25Z"
+    pr_url: "https://github.com/memorysaver/project-understanding/pull/3"
+    merge_commit: fe402cd
     priority: critical
     business_value: 10
     complexity: M
@@ -443,7 +461,13 @@ stories:
     activity: restyle-publish
     calibration_type: null
     slice: 2
-    status: pending
+    status: completed
+    assigned_to: pl-006-publisher
+    openspec_change: PL-006
+    dispatched_at_epoch: 2
+    completed_at: "2026-06-15T07:33:25Z"
+    pr_url: "https://github.com/memorysaver/project-understanding/pull/7"
+    merge_commit: 5a4f8d0
     priority: critical
     business_value: 9
     complexity: S
@@ -503,7 +527,13 @@ stories:
     activity: read-feed
     calibration_type: null
     slice: 2
-    status: pending
+    status: completed
+    assigned_to: pl-008-reader-api
+    openspec_change: PL-008
+    dispatched_at_epoch: 2
+    completed_at: "2026-06-15T07:33:25Z"
+    pr_url: "https://github.com/memorysaver/project-understanding/pull/6"
+    merge_commit: 64d68d8
     priority: critical
     business_value: 9
     complexity: S
@@ -1342,5 +1372,17 @@ changelog:
     type: wrap
     author: agent
     summary: "Wrapped PL-002 — PR #2 squash-merged to main (e2d46bb); @paperlens/llm module (OpenRouter complete()) + env bindings + 7 tests landed, gen/eval round 1 FAIL (tautological model test) -> fixed -> round 2 PASS. Archived to 2026-06-15-PL-002, created openspec/specs/llm-gateway, saved lessons-learned/PL-002.md, removed worktree. Layer 0 Wave 1 COMPLETE."
+    sections_changed:
+      - stories
+  - date: "2026-06-15"
+    type: dispatch
+    author: agent
+    summary: "Dispatched Layer 0 Wave 2 (PL-003 crawler, PL-004 digestor, PL-005 stylist, PL-006 publisher, PL-008 reader-API) as 5 parallel native background subagents (no tmux). dispatch_epoch 2."
+    sections_changed:
+      - stories
+  - date: "2026-06-15"
+    type: wrap
+    author: agent
+    summary: "Wrapped Layer 0 Wave 2 — all 5 squash-merged to main (PL-005 fe402cd #3, PL-003 0d272ef #4, PL-004 dddfc7e #5, PL-008 64d68d8 #6, PL-006 5a4f8d0 #7). New packages crawler/digestor/stylist/publisher + api Reader routers. Integrated main green: 50/50 tests, 8/8 check-types. Archived PL-003/004/005/006/008 -> specs crawler/digestor/stylist/publisher/reader-api. Removed 5 worktrees. Remaining L0: Wave 3 (PL-007/009/010) + Wave 4 (PL-011)."
     sections_changed:
       - stories
