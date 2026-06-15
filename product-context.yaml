@@ -7,8 +7,8 @@
 schema: v1
 project: PaperLens
 version: "0.2.0"
-updated_at: "2026-06-08T03:21:36Z"
-dispatch_epoch: 0
+updated_at: "2026-06-15T03:28:42Z"
+dispatch_epoch: 1
 
 # ─── CALIBRATION (/envision plan; /calibrate history) ────────
 calibration:
@@ -276,7 +276,12 @@ stories:
     activity: null
     calibration_type: null
     slice: 1
-    status: pending
+    status: in_progress
+    assigned_to: pl-001-db-schema
+    openspec_change: PL-001
+    readiness_score: 0.8
+    started_at: "2026-06-15T03:28:42Z"
+    dispatched_at_epoch: 1
     priority: critical
     business_value: 10
     complexity: M
@@ -307,7 +312,8 @@ stories:
     activity: null
     calibration_type: null
     slice: 1
-    status: pending
+    status: ready
+    readiness_score: 0.8
     priority: critical
     business_value: 9
     complexity: S
@@ -1306,3 +1312,9 @@ changelog:
     summary: "Enabled autonomous routing (topology.routing.autonomous: true) to run /aep-autopilot for Layer 0 Wave 1 (PL-001 D1 schema, PL-002 llm client). Mode: claude-team, full auto-merge to main; loop will stop after Wave 1. auto_design stays false (both stories well-specified)."
     sections_changed:
       - topology
+  - date: "2026-06-15"
+    type: dispatch
+    author: agent
+    summary: "Dispatched PL-001 (D1 schema) — Layer 0 Wave 1. Locked in_progress, created openspec/changes/PL-001 (validated strict). PL-002 cascaded pending->ready. dispatch_epoch 1."
+    sections_changed:
+      - stories
