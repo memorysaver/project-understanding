@@ -312,8 +312,12 @@ stories:
     activity: null
     calibration_type: null
     slice: 1
-    status: ready
+    status: in_progress
+    assigned_to: pl-002-llm-client
+    openspec_change: PL-002
     readiness_score: 0.8
+    started_at: "2026-06-15T03:28:42Z"
+    dispatched_at_epoch: 1
     priority: critical
     business_value: 9
     complexity: S
@@ -1316,5 +1320,11 @@ changelog:
     type: dispatch
     author: agent
     summary: "Dispatched PL-001 (D1 schema) — Layer 0 Wave 1. Locked in_progress, created openspec/changes/PL-001 (validated strict). PL-002 cascaded pending->ready. dispatch_epoch 1."
+    sections_changed:
+      - stories
+  - date: "2026-06-15"
+    type: dispatch
+    author: agent
+    summary: "Dispatched PL-002 (llm module / OpenRouter client) — Layer 0 Wave 1. Locked in_progress, created openspec/changes/PL-002 (validated strict). Parallel to PL-001 (independent modules)."
     sections_changed:
       - stories
