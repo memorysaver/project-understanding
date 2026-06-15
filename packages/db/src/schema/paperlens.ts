@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
 
 // Paper lifecycle: discovered -> digested -> styled -> published, plus failed.
 // See docs/technical-spec.md §3 (Paper state machine).
@@ -25,3 +25,26 @@ export const papers = sqliteTable("papers", {
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
 });
+
+// Digest — per-paper structured digest produced by the digestor stage.
+// Invariant: at most one current Digest per Paper (tech-spec §2).
+export const digests = sqliteTable(
+  "digests",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    paperId: text("paper_id")
+      .notNull()
+      .references(() => papers.arxivId, { onDelete: "cascade" }),
+    contributions: text("contributions", { mode: "json" }).$type<string[]>().notNull(),
+    methods: text("methods", { mode: "json" }).$type<string[]>().notNull(),
+    results: text("results", { mode: "json" }).$type<string[]>().notNull(),
+    rawJson: text("raw_json", { mode: "json" }),
+    model: text("model").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+  },
+  (table) => [index("digests_paperId_idx").on(table.paperId)],
+);
