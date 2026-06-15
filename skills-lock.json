@@ -5,7 +5,7 @@
       "source": "memorysaver/agentic-engineering-patterns",
       "sourceType": "github",
       "skillPath": "skills/patterns/autopilot/SKILL.md",
-      "computedHash": "2f390a50b734297c2a377be6012289f88ea80b6076bfab3906a834e224c0d6e1"
+      "computedHash": "0c01070bc6c1f4808bf602bc0241cbb26c0c661e6c3f68463cccc187d3fff5ab"
     },
     "aep-build": {
       "source": "memorysaver/agentic-engineering-patterns",
@@ -41,7 +41,7 @@
       "source": "memorysaver/agentic-engineering-patterns",
       "sourceType": "github",
       "skillPath": "skills/patterns/executor/SKILL.md",
-      "computedHash": "b55065fea20ac2af4881b8788016f9d2c2fdba4259fce98fac7f4c02dfca019e"
+      "computedHash": "4de60c90cf64bb98aca614c20985b71e2653396e12fea1d858d47effb853fc2e"
     },
     "aep-gen-eval": {
       "source": "memorysaver/agentic-engineering-patterns",
