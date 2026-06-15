@@ -7,8 +7,8 @@
 schema: v1
 project: PaperLens
 version: "0.2.0"
-updated_at: "2026-06-15T07:33:25Z"
-dispatch_epoch: 2
+updated_at: "2026-06-15T07:49:21Z"
+dispatch_epoch: 3
 
 # ─── CALIBRATION (/envision plan; /calibrate history) ────────
 calibration:
@@ -497,7 +497,13 @@ stories:
     activity: restyle-publish
     calibration_type: null
     slice: 3
-    status: pending
+    status: completed
+    assigned_to: pl-007-orchestrator
+    openspec_change: PL-007
+    dispatched_at_epoch: 3
+    completed_at: "2026-06-15T07:49:21Z"
+    pr_url: "https://github.com/memorysaver/project-understanding/pull/9"
+    merge_commit: e65fd51
     priority: critical
     business_value: 10
     complexity: M
@@ -563,7 +569,13 @@ stories:
     activity: read-feed
     calibration_type: null
     slice: 3
-    status: pending
+    status: completed
+    assigned_to: pl-009-010-reader-web
+    openspec_change: PL-009-010
+    dispatched_at_epoch: 3
+    completed_at: "2026-06-15T07:49:21Z"
+    pr_url: "https://github.com/memorysaver/project-understanding/pull/8"
+    merge_commit: 3cfdced
     priority: high
     business_value: 8
     complexity: S
@@ -593,7 +605,13 @@ stories:
     activity: read-article
     calibration_type: null
     slice: 3
-    status: pending
+    status: completed
+    assigned_to: pl-009-010-reader-web
+    openspec_change: PL-009-010
+    dispatched_at_epoch: 3
+    completed_at: "2026-06-15T07:49:21Z"
+    pr_url: "https://github.com/memorysaver/project-understanding/pull/8"
+    merge_commit: 3cfdced
     priority: high
     business_value: 8
     complexity: S
@@ -1384,5 +1402,17 @@ changelog:
     type: wrap
     author: agent
     summary: "Wrapped Layer 0 Wave 2 — all 5 squash-merged to main (PL-005 fe402cd #3, PL-003 0d272ef #4, PL-004 dddfc7e #5, PL-008 64d68d8 #6, PL-006 5a4f8d0 #7). New packages crawler/digestor/stylist/publisher + api Reader routers. Integrated main green: 50/50 tests, 8/8 check-types. Archived PL-003/004/005/006/008 -> specs crawler/digestor/stylist/publisher/reader-api. Removed 5 worktrees. Remaining L0: Wave 3 (PL-007/009/010) + Wave 4 (PL-011)."
+    sections_changed:
+      - stories
+  - date: "2026-06-15"
+    type: dispatch
+    author: agent
+    summary: "Dispatched Layer 0 Wave 3 as native background subagents (dispatch_epoch 3): PL-007 (inline pipeline, own worktree) + PL-009/PL-010 (reader feed + article, COMBINED into one worktree/PR to avoid a routeTree.gen.ts conflict). Disjoint file sets (server/packages vs apps/web)."
+    sections_changed:
+      - stories
+  - date: "2026-06-15"
+    type: wrap
+    author: agent
+    summary: "Wrapped Layer 0 Wave 3 — PL-009+PL-010 reader web (3cfdced #8) + PL-007 inline pipeline (e65fd51 #9) squash-merged. New @paperlens/orchestrator (runOnce, idempotent, dev-only POST /dev/run-once) + reader feed/article routes. Integrated main green: 53/53 tests, 9/9 check-types. Archived PL-007 + PL-009-010 -> specs orchestrator + reader-web. Removed 2 worktrees. Layer 0 walking skeleton CODE COMPLETE (crawl→digest→style→publish→feed→article). Remaining L0: Wave 4 PL-011 (faithfulness harness) then the L0 GATE (real arXiv+OpenRouter run, needs user key)."
     sections_changed:
       - stories
