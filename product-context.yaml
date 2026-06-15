@@ -1222,6 +1222,38 @@ stories:
       unit: ["styled body has no fabricated arXiv id/title", "citation built from Paper metadata"]
       integration: []
       contract: []
+  # ── Layer 0 faithfulness discovery (from /aep-reflect after the gate re-run) ──
+  - id: PL-030
+    title: "Abstract-only faithfulness: digestor must not fabricate specifics (benchmark numbers/tables) when full text is unavailable"
+    layer: 0
+    module: digestor
+    activity: ingest-digest
+    calibration_type: null
+    slice: 4
+    status: pending
+    priority: critical
+    business_value: 10
+    complexity: M
+    compile_mode: single_change
+    change_group: null
+    dependencies: ["PL-004"]
+    description:
+      what_changes: "When only the abstract is available (no arXiv HTML/full text — common for freshly-published papers), the digestor currently invents specific quantitative results (benchmark scores, comparison tables) absent from the abstract. The digestor must detect full-text availability and, when abstract-only, ground the Digest strictly in the abstract (no invented numbers/baselines) OR mark the paper full-text-unavailable so the orchestrator can defer/flag it. The stylist must not add numbers."
+      why: "L0 gate re-run on 25 brand-new (abstract-only) papers: ~22% hallucination, dominated by fabricated benchmark tables (e.g. RepFusion 2606.14700 invented GenEval/DPG-Bench scores absent from its abstract, even internally inconsistent). Freshly-published papers — the product's core input — are often abstract-only, so this breaks the 'trust without reading' bet for the primary use case. The earlier 4.14% under-counted it: the Opus adversarial-verify gave benefit-of-doubt to ungroundable specifics."
+    acceptance_criteria:
+      - "Digestor distinguishes full-text vs abstract-only and records which source kind backed the Digest."
+      - "On abstract-only input, the Digest contains no specific numeric/benchmark claim absent from the abstract (test: an abstract with no numbers -> digest invents no numbers)."
+      - "Orchestrator can defer or flag a paper whose full text is unavailable (decision recorded)."
+    interface_obligations:
+      implements: []
+      consumes: ["digestor.run", "orchestrator.runOnce"]
+      contract_tests_required: false
+    files_affected: ["packages/digestor/src/index.ts", "packages/digestor/src/full-text.ts", "packages/orchestrator/src/index.ts"]
+    technical_notes: "Found via the L0 gate re-run on abstract-only papers (2026-06-15). Likely needs a source_kind (full_text|abstract) signal threaded digestor->digest, and a policy to defer abstract-only papers until ar5iv HTML renders."
+    verification:
+      unit: ["abstract-only digest invents no numbers", "full-text vs abstract-only detection"]
+      integration: []
+      contract: []
 
 # ─── WAVES (/map Step 3) ─────────────────────────────────────
 waves:
@@ -1269,16 +1301,17 @@ waves:
 # ─── LAYER GATES ─────────────────────────────────────────────
 layer_gates:
   - layer: 0
-    status: provisional_pass
+    status: conditional_fail
     test_definition: "One hardcoded arXiv paper flows crawl->digest->style->publish to a published Post; the feed lists it and the article page renders title+body+source link. Faithfulness eval run with <=10% hallucinated/unsupported claims over ~20-30 papers."
     results:
-      tests_run: 34
-      tests_passed: 33
-      tests_failed: 1
-      faithfulness_famous_sample: "9/166 = 5.4% (10 well-known papers, Sonnet blind graders)"
-      faithfulness_new_sample: "24/580 = 4.14% verified (24 brand-new 2026-06-12 papers, Opus grade + adversarial verify); content-only ~1.0%"
-      verdict: "PASS (<=10%) — PROVISIONAL: LLM-judged, not human-blind; dominant defect = stylist citation fabrication -> PL-029"
-      failures: ["stylist citation fabrication (~75% of genuine hallucinations) — FIXED by PL-029 (4bea861); re-run pending to confirm projected ~1.0% content-only rate"]
+      faithfulness_full_text: "GOOD (~1-5%): with arXiv full text the pipeline is faithful (e.g. the Transformer post was accurate). Famous-paper sample 9/166 = 5.4% (Sonnet blind graders)."
+      faithfulness_abstract_only: "POOR (~22%): on 25 brand-new abstract-only papers the pipeline fabricates specific benchmark numbers/tables absent from the abstract (e.g. RepFusion 2606.14700 invented GenEval/DPG-Bench scores). -> PL-030."
+      citation_fabrication: "FIXED by PL-029 (4bea861) — 0/25 fabricated citations in the re-run (mechanically verified)."
+      grader_caveat: "The earlier new-sample 4.14% (Opus grade + adversarial verify) was OPTIMISTIC — the verify's benefit-of-doubt to claims 'beyond the excerpt' masked abstract-only fabrication; a strict single-pass grader gives ~22% on the same set."
+      verdict: "NOT PASSED — gate fails on abstract-only papers (the product's core input). Faithful only when full text is available. Blocked on PL-030 (+ PL-029 citation fix landed)."
+      failures:
+        - "abstract-only digests fabricate quantitative specifics (~22%) — PL-030"
+        - "stylist citation fabrication — FIXED (PL-029)"
     completed_at: null
   - layer: 1
     status: not_started
@@ -1503,6 +1536,21 @@ changelog:
     type: wrap
     author: agent
     summary: "Fixed PL-029 (stylist citation fabrication) — PR #12 (4bea861) squash-merged. BODY_GUARD instruction forbids inventing bibliographic metadata + stripFabricatedCitation() deterministically removes any trailing citation footer from the styled body; publisher.buildCitation already used real Paper metadata (unchanged). 9 stylist tests (3 new) + repo-wide 69 tests green. Removes the dominant L0 faithfulness defect (~75% of genuine hallucinations); projected content-only rate ~1.0%. No OpenSpec change (bug-fix to existing stylist capability)."
+    sections_changed:
+      - stories
+      - layer_gates
+  - date: "2026-06-15"
+    type: reflection
+    summary: "Post-PL-029 confirmation re-run (25 brand-new papers, fixed pipeline) surfaced a deeper Discovery. Citation fix CONFIRMED (mechanical check: 0/25 fabricated citations). BUT all 25 papers were abstract-only (2026-06-12 papers have no ar5iv HTML), and the pipeline FABRICATES specific benchmark numbers/tables absent from the abstract (concrete: RepFusion 2606.14700 invented an entire GenEval/DPG-Bench comparison table, internally inconsistent). Strict grading shows ~22% on this set; the earlier 4.14% was masked by the Opus verify's benefit-of-doubt."
+    feedback:
+      discoveries:
+        - description: "Faithfulness depends critically on full-text availability. Abstract-only digests fabricate quantitative specifics. Freshly-published papers (the product's core input) are often abstract-only, so the 'trust without reading' bet currently fails for the primary use case until full text renders."
+          affected_section: "architecture"
+      bugs:
+        - description: "Digestor/stylist invent benchmark numbers/tables on abstract-only input"
+          story_id: "PL-030"
+    gate_result: "L0 faithfulness NOT PASSED — good with full text (~1-5%), poor abstract-only (~22%). layer_gates[0] -> conditional_fail. Blocked on PL-030."
+    process_note: "Grader methodology matters: an adversarial-verify step that gives 'benefit of the doubt to claims beyond the excerpt' is WRONG for abstract-only papers (there is no full text to ground them) — it masked the fabrication. Re-grade abstract-only against the abstract strictly."
     sections_changed:
       - stories
       - layer_gates
