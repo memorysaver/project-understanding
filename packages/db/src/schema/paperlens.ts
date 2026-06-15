@@ -6,6 +6,11 @@ import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
 export const paperStatuses = ["discovered", "digested", "styled", "published", "failed"] as const;
 export type PaperStatus = (typeof paperStatuses)[number];
 
+// Post lifecycle states (tech-spec §2). published is terminal-happy; the owner
+// may move a published post to unpublished from the console.
+export const postStatuses = ["draft", "unpublished", "published"] as const;
+export type PostStatus = (typeof postStatuses)[number];
+
 // Paper — arxiv_id is the dedup key (PRIMARY KEY). Inserts use
 // INSERT ... ON CONFLICT DO NOTHING so the same paper is never stored twice.
 export const papers = sqliteTable("papers", {
@@ -66,3 +71,38 @@ export const stylePrompts = sqliteTable("style_prompts", {
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
 });
+
+// Post — the published-facing article assembled by the publisher stage.
+// Invariant: a Post with status `published` has a non-null published_at
+// (enforced in the app/publisher layer; tech-spec §2).
+export const posts = sqliteTable(
+  "posts",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    paperId: text("paper_id")
+      .notNull()
+      .references(() => papers.arxivId, { onDelete: "cascade" }),
+    digestId: text("digest_id")
+      .notNull()
+      .references(() => digests.id, { onDelete: "cascade" }),
+    stylePromptId: text("style_prompt_id")
+      .notNull()
+      .references(() => stylePrompts.id),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    citation: text("citation").notNull(),
+    tags: text("tags", { mode: "json" }).$type<string[]>(),
+    status: text("status", { enum: postStatuses }).default("draft").notNull(),
+    publishedAt: integer("published_at", { mode: "timestamp_ms" }),
+    model: text("model").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+  },
+  (table) => [
+    index("posts_paperId_idx").on(table.paperId),
+    index("posts_status_idx").on(table.status),
+  ],
+);
