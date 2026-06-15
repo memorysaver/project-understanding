@@ -11,6 +11,22 @@ export type PaperStatus = (typeof paperStatuses)[number];
 export const postStatuses = ["draft", "unpublished", "published"] as const;
 export type PostStatus = (typeof postStatuses)[number];
 
+// Run trigger + status enums (tech-spec §2).
+export const runTriggers = ["manual", "cron"] as const;
+export type RunTrigger = (typeof runTriggers)[number];
+
+export const runStatuses = ["running", "done", "failed"] as const;
+export type RunStatus = (typeof runStatuses)[number];
+
+// Per-pipeline-run stats recorded by the orchestrator (tech-spec §2).
+export type RunStats = {
+  discovered: number;
+  digested: number;
+  styled: number;
+  published: number;
+  failed: number;
+};
+
 // Paper — arxiv_id is the dedup key (PRIMARY KEY). Inserts use
 // INSERT ... ON CONFLICT DO NOTHING so the same paper is never stored twice.
 export const papers = sqliteTable("papers", {
@@ -106,3 +122,17 @@ export const posts = sqliteTable(
     index("posts_status_idx").on(table.status),
   ],
 );
+
+// Run — one pipeline run (manual or cron) with aggregate stage counts.
+export const runs = sqliteTable("runs", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  trigger: text("trigger", { enum: runTriggers }).notNull(),
+  status: text("status", { enum: runStatuses }).default("running").notNull(),
+  startedAt: integer("started_at", { mode: "timestamp_ms" })
+    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+    .notNull(),
+  finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+  stats: text("stats", { mode: "json" }).$type<RunStats>(),
+});
