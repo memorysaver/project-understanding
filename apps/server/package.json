@@ -15,6 +15,7 @@
     "@paperlens/auth": "workspace:*",
     "@paperlens/db": "workspace:*",
     "@paperlens/env": "workspace:*",
+    "@paperlens/orchestrator": "workspace:*",
     "better-auth": "catalog:",
     "dotenv": "catalog:",
     "hono": "catalog:",

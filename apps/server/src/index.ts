@@ -7,6 +7,7 @@ import { onError } from "@orpc/server";
 import { createContext } from "@paperlens/api/context";
 import { appRouter } from "@paperlens/api/routers/index";
 import { createAuth } from "@paperlens/auth";
+import { runOnce } from "@paperlens/orchestrator";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
@@ -74,5 +75,16 @@ app.use("/*", async (c, next) => {
 app.get("/", (c) => {
   return c.text("OK");
 });
+
+// Dev-only L0 trigger (PL-007): run the full inline pipeline for one hardcoded
+// arXiv id and return the published Post. Guarded so it is never mounted in
+// production. Real clients are wired by `runOnce`'s defaults (db, llm, arXiv/
+// full-text fetchers).
+if (globalThis.process?.env?.NODE_ENV !== "production") {
+  app.post("/dev/run-once", async (c) => {
+    const post = await runOnce();
+    return c.json(post);
+  });
+}
 
 export default app;
