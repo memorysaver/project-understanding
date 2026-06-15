@@ -276,12 +276,14 @@ stories:
     activity: null
     calibration_type: null
     slice: 1
-    status: in_progress
+    status: completed
     assigned_to: pl-001-db-schema
     openspec_change: PL-001
     readiness_score: 0.8
     started_at: "2026-06-15T03:28:42Z"
     dispatched_at_epoch: 1
+    completed_at: "2026-06-15T05:52:48Z"
+    pr_url: "https://github.com/memorysaver/project-understanding/pull/1"
     priority: critical
     business_value: 10
     complexity: M
@@ -1326,5 +1328,11 @@ changelog:
     type: dispatch
     author: agent
     summary: "Dispatched PL-002 (llm module / OpenRouter client) — Layer 0 Wave 1. Locked in_progress, created openspec/changes/PL-002 (validated strict). Parallel to PL-001 (independent modules)."
+    sections_changed:
+      - stories
+  - date: "2026-06-15"
+    type: wrap
+    author: agent
+    summary: "Wrapped PL-001 — PR #1 squash-merged to main (a0f73cd); D1 schema + migrations + seed + tests landed, gen/eval PASS round 1. Archived OpenSpec change to 2026-06-15-PL-001, created openspec/specs/persistence, saved lessons-learned/PL-001.md, removed worktree."
     sections_changed:
       - stories
