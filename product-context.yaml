@@ -1192,7 +1192,13 @@ stories:
     activity: restyle-publish
     calibration_type: null
     slice: 4
-    status: pending
+    status: completed
+    assigned_to: pl-029-citation-fix
+    openspec_change: null
+    dispatched_at_epoch: 5
+    completed_at: "2026-06-15T12:41:10Z"
+    pr_url: "https://github.com/memorysaver/project-understanding/pull/12"
+    merge_commit: 4bea861
     priority: critical
     business_value: 9
     complexity: S
@@ -1272,7 +1278,7 @@ layer_gates:
       faithfulness_famous_sample: "9/166 = 5.4% (10 well-known papers, Sonnet blind graders)"
       faithfulness_new_sample: "24/580 = 4.14% verified (24 brand-new 2026-06-12 papers, Opus grade + adversarial verify); content-only ~1.0%"
       verdict: "PASS (<=10%) — PROVISIONAL: LLM-judged, not human-blind; dominant defect = stylist citation fabrication -> PL-029"
-      failures: ["stylist fabricates citation footer (placeholder/wrong arXiv id + wrong title + fake affiliation) — ~75% of genuine hallucinations — PL-029"]
+      failures: ["stylist citation fabrication (~75% of genuine hallucinations) — FIXED by PL-029 (4bea861); re-run pending to confirm projected ~1.0% content-only rate"]
     completed_at: null
   - layer: 1
     status: not_started
@@ -1493,3 +1499,10 @@ changelog:
       - stories
       - layer_gates
       - topology
+  - date: "2026-06-15"
+    type: wrap
+    author: agent
+    summary: "Fixed PL-029 (stylist citation fabrication) — PR #12 (4bea861) squash-merged. BODY_GUARD instruction forbids inventing bibliographic metadata + stripFabricatedCitation() deterministically removes any trailing citation footer from the styled body; publisher.buildCitation already used real Paper metadata (unchanged). 9 stylist tests (3 new) + repo-wide 69 tests green. Removes the dominant L0 faithfulness defect (~75% of genuine hallucinations); projected content-only rate ~1.0%. No OpenSpec change (bug-fix to existing stylist capability)."
+    sections_changed:
+      - stories
+      - layer_gates
