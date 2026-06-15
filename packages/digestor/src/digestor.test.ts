@@ -251,4 +251,56 @@ describe("PL-004 digestor", () => {
       globalThis.fetch = realFetch;
     }
   });
+
+  // PL-030: when only the abstract is available (the fetcher returns the stored
+  // abstract verbatim), the digest prompt gets the strict no-fabrication guard.
+  test("abstract-only input adds the strict no-fabrication guard to the digest prompt", async () => {
+    const db = await makeDb();
+    await insertPaper(db); // abstract: "We study things and find results."
+    let captured: { messages: { role: string; content: string }[] } | undefined;
+    const abstractFetcher = async () => "We study things and find results.";
+    await run({
+      paperId: "2401.00004",
+      db,
+      fetchFullText: abstractFetcher,
+      complete: async (args) => {
+        captured = args;
+        return {
+          json: CANNED_DIGEST,
+          model: "m",
+          usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+        };
+      },
+    });
+    const system = captured!.messages.find((m) => m.role === "system")!.content;
+    expect(system).toContain("Only the paper's ABSTRACT is available");
+    expect(system).toContain("Do NOT invent");
+    const user = captured!.messages.find((m) => m.role === "user")!.content;
+    expect(user).toContain("Abstract (full text unavailable)");
+  });
+
+  // PL-030: real full text (differs from the abstract) is NOT treated as
+  // abstract-only — the guard is absent.
+  test("full-text input does NOT add the abstract-only guard", async () => {
+    const db = await makeDb();
+    await insertPaper(db);
+    let captured: { messages: { role: string; content: string }[] } | undefined;
+    await run({
+      paperId: "2401.00004",
+      db,
+      fetchFullText: fixtureFetcher, // FIXTURE_FULL_TEXT != abstract -> full text
+      complete: async (args) => {
+        captured = args;
+        return {
+          json: CANNED_DIGEST,
+          model: "m",
+          usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+        };
+      },
+    });
+    const system = captured!.messages.find((m) => m.role === "system")!.content;
+    expect(system).not.toContain("ABSTRACT is available");
+    const user = captured!.messages.find((m) => m.role === "user")!.content;
+    expect(user).toContain("Full text:");
+  });
 });

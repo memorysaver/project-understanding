@@ -51,12 +51,27 @@ const SYSTEM_PROMPT =
   "contributions, methods, and results as short, faithful bullet points. Only " +
   "include claims supported by the text; do not invent or extrapolate.";
 
-function buildMessages(paper: { title: string }, fullText: string) {
+// Appended when only the abstract is available (full text could not be fetched).
+// Without it the model invents specific quantitative results — benchmark scores,
+// comparison tables, baselines — absent from the abstract, the dominant
+// abstract-only faithfulness defect found by the L0 gate (PL-030).
+const ABSTRACT_ONLY_GUARD =
+  "\n\nIMPORTANT: Only the paper's ABSTRACT is available — the full text could not " +
+  "be retrieved. Extract ONLY what the abstract explicitly states. Do NOT invent or " +
+  "infer any specific number, benchmark score, dataset size, baseline name, or " +
+  "comparison the abstract does not contain. If the abstract gives no quantitative " +
+  "results, keep the results bullets qualitative.";
+
+function buildMessages(paper: { title: string }, fullText: string, abstractOnly: boolean) {
+  const label = abstractOnly ? "Abstract (full text unavailable)" : "Full text";
   return [
-    { role: "system" as const, content: SYSTEM_PROMPT },
+    {
+      role: "system" as const,
+      content: abstractOnly ? SYSTEM_PROMPT + ABSTRACT_ONLY_GUARD : SYSTEM_PROMPT,
+    },
     {
       role: "user" as const,
-      content: `Title: ${paper.title}\n\nFull text:\n${fullText}`,
+      content: `Title: ${paper.title}\n\n${label}:\n${fullText}`,
     },
   ];
 }
@@ -81,12 +96,16 @@ export async function run(args: DigestorRunArgs) {
   }
 
   const fullText = await fetchFullText(paper);
+  // The default fetcher returns the stored abstract verbatim when no full text is
+  // available; detect that so we can forbid inventing specifics absent from the
+  // abstract (PL-030).
+  const abstractOnly = fullText.trim() === paper.abstract.trim();
 
   // If the LLM call fails it throws here, before any write — the transaction
   // below never starts, so the Paper stays at `discovered` (criterion 3).
   const { json, model } = await complete({
     stage: "digest",
-    messages: buildMessages(paper, fullText),
+    messages: buildMessages(paper, fullText, abstractOnly),
     schema: digestSchema,
   });
 
