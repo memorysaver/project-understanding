@@ -12,11 +12,39 @@ export type Paper = InferSelectModel<typeof papers>;
  */
 export type FullTextFetcher = (paper: Paper) => Promise<string>;
 
+// arXiv's HTML (ar5iv) wraps the paper in page chrome — a theme <script>, a ToC
+// <nav>, the document <head>, headers/footers. Stripping only tags leaves the
+// script/style *bodies* and ToC text in the output, which pollutes the digest
+// and wastes tokens. Remove those blocks (content included) before stripping the
+// remaining tags.
+const SCRIPT = /<script\b[^>]*>[\s\S]*?<\/script>/gi;
+const STYLE = /<style\b[^>]*>[\s\S]*?<\/style>/gi;
+const COMMENT = /<!--[\s\S]*?-->/g;
+const CHROME = /<(head|nav|header|footer)\b[^>]*>[\s\S]*?<\/\1>/gi;
 const HTML_TAG = /<[^>]+>/g;
 const WHITESPACE = /\s+/g;
 
+const ENTITIES: Record<string, string> = {
+  "&amp;": "&",
+  "&lt;": "<",
+  "&gt;": ">",
+  "&quot;": '"',
+  "&#39;": "'",
+  "&apos;": "'",
+  "&nbsp;": " ",
+};
+const ENTITY = /&amp;|&lt;|&gt;|&quot;|&#39;|&apos;|&nbsp;/g;
+
 function htmlToText(html: string): string {
-  return html.replace(HTML_TAG, " ").replace(WHITESPACE, " ").trim();
+  return html
+    .replace(SCRIPT, " ")
+    .replace(STYLE, " ")
+    .replace(COMMENT, " ")
+    .replace(CHROME, " ")
+    .replace(HTML_TAG, " ")
+    .replace(ENTITY, (e) => ENTITIES[e]!)
+    .replace(WHITESPACE, " ")
+    .trim();
 }
 
 /**

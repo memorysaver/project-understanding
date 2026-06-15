@@ -212,4 +212,43 @@ describe("PL-004 digestor", () => {
     // No HTML source -> abstract fallback (no network).
     expect(await fetchArxivFullText({ ...paper, fullTextUrl: null })).toBe("the stored abstract");
   });
+
+  // Default fetcher — strips arXiv (ar5iv) page chrome: the theme <script> body,
+  // <style>, and the ToC <nav> must not survive as text; the article body must.
+  test("default fetcher strips script/style/nav chrome from arXiv HTML, keeping article text", async () => {
+    const paper = {
+      arxivId: "2401.00004",
+      title: "t",
+      authors: ["a"],
+      abstract: "the stored abstract",
+      sourceUrl: "https://arxiv.org/abs/2401.00004",
+      fullTextUrl: "https://arxiv.org/html/2401.00004",
+      pdfUrl: null,
+      status: "discovered" as const,
+      discoveredAt: new Date(),
+      updatedAt: new Date(),
+    } satisfies Paper;
+
+    const ar5iv =
+      "<html><head>" +
+      '<script>const t = localStorage.getItem("ar5iv_theme"); document.title;</script>' +
+      "<style>body{color:red}</style></head>" +
+      '<body><nav class="ltx_TOC">1 Introduction 2 Background 3 Methods</nav>' +
+      "<article><h1>Real Title</h1><p>The transformer uses self&#39;attention &amp; layers.</p></article>" +
+      "</body></html>";
+
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(ar5iv, { status: 200 })) as unknown as typeof fetch;
+    try {
+      const text = await fetchArxivFullText(paper);
+      expect(text).toContain("The transformer uses self'attention & layers.");
+      expect(text).toContain("Real Title");
+      expect(text).not.toContain("localStorage"); // script body gone
+      expect(text).not.toContain("color:red"); // style body gone
+      expect(text).not.toContain("1 Introduction"); // ToC nav gone
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
 });
