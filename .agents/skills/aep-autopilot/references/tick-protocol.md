@@ -1,6 +1,6 @@
 # Tick Protocol
 
-The 7-step state machine executed on each autopilot tick. Each tick is idempotent — running it twice with no external state change produces the same result and takes no duplicate actions.
+The 7-step state machine executed on each autopilot tick (with a ③.5 post-merge guard sub-step between wrap and guide-completion). Each tick is idempotent — running it twice with no external state change produces the same result and takes no duplicate actions.
 
 **Target duration:** <60 seconds of work per tick (under the goal driver the
 turn then waits the per-tick floor — step ⑦ — before ending)
@@ -8,12 +8,12 @@ turn then waits the per-tick floor — step ⑦ — before ending)
 this tick each turn until the layer completes; loop driver (fallback) —
 `/loop 5m /aep-autopilot tick`; or manual `/aep-autopilot tick`
 
-> **BOUNDARY REMINDER:** The autopilot is an orchestrator. Every action on a workspace is `executor.nudge()` / `executor.liveness()` — autopilot runs only on **steerable, driver-compatible modes** (claude-team / claude-bg / codex-subagent / codex-exec / legacy; see the per-mode transport table in SKILL.md and `aep-executor/references/backends.md`). The nudge texts in this file are mode-independent — deliver each through the workspace's `backend` transport (`SendMessage` / `feedback.md` / `send_input` / `codex exec resume` / `tmux send-keys`). Never spawn code reviewers from main, never read workspace source code, never call `gh pr merge`. See SKILL.md "STOP — Orchestrator Boundaries".
+> **BOUNDARY REMINDER:** The autopilot is an orchestrator. Every action on a workspace is `executor.nudge()` / `executor.liveness()` — autopilot runs only on **steerable, driver-compatible modes** (native-bg-subagent / claude-bg / codex-subagent / codex-exec / legacy; see the per-mode transport table in SKILL.md and `aep-executor/references/backends.md`). The nudge texts in this file are mode-independent — deliver each through the workspace's `backend` transport (`SendMessage(to: agentId)` / `feedback.md` / `send_input` / `codex exec resume` / `tmux send-keys`). Liveness is the [post-spawn liveness probe](../../executor/references/backends.md#post-spawn-liveness-probe) (process exists AND worktree active) — **never** roster/state membership. Never spawn code reviewers from main, never read workspace source code, never call `gh pr merge`. See SKILL.md "STOP — Orchestrator Boundaries".
 
 **EXECUTION MODEL — CHECK → ACT** (see SKILL.md "Execution model"). A tick is two halves:
 
 - **CHECK** — steps ①②⑤, the read-only/scoring parts of ④⑥, and the ⑦ state write. These run in a cheap, context-isolated agent via `executor.check()` (Claude Code Haiku subagent / Codex `codex exec`) and produce an **action list**. The CHECK reads signals only — never workspace code.
-- **ACT** — the orchestrator performs the emitted actions: ③ wrap, ④/⑤ nudges, ⑥ launch, escalations.
+- **ACT** — the orchestrator performs the emitted actions: ③ wrap, ③.5 post-merge guard (dogfood / reflect / revert), ④/⑤ nudges, ⑥ launch, escalations.
 
 The action-list schema is `{summary, state_written, actions[]}`, each action `{type, workspace, story_id, message, reason}` (full schema in `aep-executor/references/backends.md`). The step recipes below are both the content of the CHECK prompt and the templates the ACT executes.
 
@@ -77,7 +77,8 @@ For each workspace in `state.workspaces`:
   counting and emit an `escalate` action of type `human_gate`. The
   `expected_human_action` is hub-and-spoke: **the human answers in the main
   session**; the orchestrator relays it on the mode's channel —
-  `SendMessage` (claude-team) / resume the session with the answer
+  re-spawn a bg subagent into the worktree with the answer
+  (native-bg-subagent, parked) / resume the session with the answer
   (claude-bg, parked) / `send_input` (codex-subagent) /
   `codex exec resume <agent_id> "<answer>"` (codex-exec, parked) /
   `executor.nudge()` (legacy). A **parked** worker (gate-and-park: its run
@@ -86,16 +87,19 @@ For each workspace in `state.workspaces`:
   crashed or stuck.
 - Clear the escalation when the entry gains a `resolved:` line.
 
-**Orphan check (session-bound modes — claude-team, codex-subagent):**
+**Orphan check (session-bound modes — native-bg-subagent, codex-subagent) — by real liveness, not roster:**
 
-- If the workspace's `agent_id` no longer appears in TaskList / `list_agents`
-  (lead restarted, worker crashed) but the worktree exists with progress,
-  emit a `launch` action flagged `readopt: true` — the ACT re-spawns a worker
-  **into the existing worktree** with the recovery bootstrap ("Run
-  `bash .dev-workflow/init.sh` to recover state, read
+- Apply the [post-spawn liveness probe](../../executor/references/backends.md#post-spawn-liveness-probe):
+  the workspace is an **orphan** when its `agent_id` no longer appears in TaskList
+  / `list_agents` (lead restarted, worker crashed, **or the spawn never actually
+  started** — e.g. the removed claude-team's truncated-launch failure) **and/or**
+  the worktree shows no live process — even if state/roster still says "active".
+  If the worktree exists with progress, emit a `launch` action flagged
+  `readopt: true` — the ACT re-spawns a worker **into the existing worktree** with
+  the recovery bootstrap ("Run `bash .dev-workflow/init.sh` to recover state, read
   `.dev-workflow/signals/feedback.md`, then continue the /aep-build flow"), then
-  updates `agent_id`. Do not mark the story failed; do not create a new
-  worktree.
+  updates `agent_id`. Do not mark the story failed; do not create a new worktree.
+  **Never** accept roster/state membership as proof the worker is alive.
 
 ---
 
@@ -115,6 +119,24 @@ For each workspace where `story_status == "completed"`:
 **Max ONE wrap per tick.** Wraps modify `product-context.yaml` and involve git operations. Running multiple wraps risks conflicts. If multiple workspaces completed simultaneously, they get wrapped across consecutive ticks.
 
 After wrapping, **skip to step ⑦** (write state). The next tick will handle dispatch of newly-ready stories (which the wrap may have unblocked via cascade).
+
+---
+
+## Step ③.5: Post-Merge Guard
+
+For each recently-merged story (one Step ③ wrapped within the monitoring window — default applies per `post-merge-guard.md`), run the **post-merge guard**. The detail lives in `references/post-merge-guard.md`; this step defers to it. Within the monitoring window:
+
+1. **Watch deploy health** — read deploy/CI signals and `gh` only (no workspace code, no `gh pr merge`). The orchestrator boundary holds.
+2. **Run host-aware dogfood** — exercise the merged change per the host-aware recipe in `post-merge-guard.md`.
+
+Two issue paths:
+
+- **Dogfood UX / functional issue** → route the finding through the `/aep-reflect` classifier, which auto-creates a follow-up story.
+- **Hard regression** (deploy health breaks / CI red on the integration branch) → apply the `post_merge_guard.auto_revert` policy:
+  - **DEFAULT (conservative, `auto_revert: false`)** → **warn + escalate** for human decision; do not revert.
+  - **`auto_revert: true`** (opt-in) → revert the merge.
+
+Emit any follow-up (reflect story / escalation / revert) as an action; never read workspace source — signals / CI / `gh` only.
 
 ---
 
@@ -215,7 +237,7 @@ executor.nudge(<workspace-name>,
   "Code has changed since your last evaluation. Re-run Phase 5 code review on the current state before proceeding with the PR. Write a new eval-request.md and spawn a fresh evaluator.")
 ```
 
-**Escalation:** No eval-response after 6 ticks (30 min) post-trigger → add escalation with type `"eval_not_converging"`.
+**Escalation:** No eval-response after 6 ticks (30 min) post-trigger → before escalating, the workspace must climb the **recovery ladder** (`../../gen-eval/references/recovery-ladder.md`): nudge it to work the ladder's rungs (re-scope, decompose, relax non-essential criteria, etc.) first. Only emit the `"eval_not_converging"` escalation **after the ladder is exhausted** — i.e. the workspace has reported the ladder spent without a PASS.
 
 ### Sub-step ④c: Guide to Merge
 
@@ -277,16 +299,16 @@ When signals are stale (same phase and completion_pct as previous tick), check w
 **Step 1 — Check mode-specific activity** and compare against
 `last_liveness_hash` stored in the workspace state entry:
 
-| Mode           | Activity probe                                                          |
-| -------------- | ----------------------------------------------------------------------- |
-| claude-team    | TaskList/TaskGet for the teammate — task status / last message changed? |
-| claude-bg      | `claude agents --json` status + `claude logs <agent_id> \| tail -20`    |
-| codex-subagent | `list_agents` status for `<agent_id>`                                   |
-| codex-exec     | `tail -20 .feature-workspaces/<name>/.dev-workflow/worker.log`          |
-| legacy         | `tmux capture-pane -t <name>:0.0 -p -S -20`                             |
+| Mode               | Activity probe                                                                   |
+| ------------------ | -------------------------------------------------------------------------------- |
+| native-bg-subagent | TaskList / `TaskOutput <agentId>` — task status / output changed?                |
+| claude-bg          | `claude agents --json` status + `claude logs <agent_id> \| tail -20`             |
+| codex-subagent     | `list_agents` status for `<agent_id>`                                            |
+| codex-exec         | `tail -20 .feature-workspaces/<name>/.dev-workflow/worker.log`                   |
+| legacy             | `tmux capture-pane -t <name>:0.0 -p -S -20` (a `zsh` pane = never-started spawn) |
 
 - **`last_liveness_hash` is null** (first tick after launch or restart) → Populate it with the hash of the current probe output. Do NOT increment `consecutive_stuck_ticks`. The workspace gets benefit of the doubt on its first stale-signal tick.
-- **The agent no longer exists** (teammate gone from TaskList, `list_agents` empty, `claude agents` shows exited, tmux session missing) → on a **session-bound mode** this is an **orphan**: emit the re-adoption `launch` action (see Step ②), do NOT count it stuck. On an **OS-bound mode** a missing process means a crashed/exited agent → increment `consecutive_stuck_ticks`.
+- **The agent no longer exists** (bg subagent gone from TaskList, `list_agents` empty, `claude agents` shows exited, tmux session missing) → on a **session-bound mode** this is an **orphan**: emit the re-adoption `launch` action (see Step ②), do NOT count it stuck. On an **OS-bound mode** a missing process means a crashed/exited agent → increment `consecutive_stuck_ticks`.
 - **Probe output differs from `last_liveness_hash`** → Agent is active, signals are lagging. Update `last_liveness_hash`. Do NOT increment `consecutive_stuck_ticks`.
 - **Probe output matches `last_liveness_hash`** → Proceed to Step 2.
 
@@ -383,12 +405,12 @@ Before scoring individual stories, check for `compile_mode: grouped_change`:
 For the top-scored story (or group), use `readiness_score` for routing:
 
 - **readiness_score >= 0.7** → dispatch to `/aep-launch`
-- **readiness_score 0.5–0.7** → check `topology.routing.auto_design`:
-  - If `auto_design: true` → route through `/aep-design` automatically (no pause), then `/aep-launch`
-  - If `auto_design: false` → **ESCALATE** (pause for human design input)
-- **readiness_score < 0.5** → check `topology.routing.auto_design`:
-  - If `auto_design: true` → route through `/aep-design` automatically (no pause), then `/aep-launch`
-  - If `auto_design: false` → **ESCALATE** (pause for human design input)
+- **readiness_score 0.5–0.7** → check `topology.routing.full_auto` / `auto_design`:
+  - If `full_auto: true` (master switch) **or** `auto_design: true` → auto-route through the **non-interactive design resolver** (`/aep-design`, no pause), then `/aep-launch`
+  - Otherwise → **ESCALATE** (pause for human design input)
+- **readiness_score < 0.5** → check `topology.routing.full_auto` / `auto_design`:
+  - If `full_auto: true` (master switch) **or** `auto_design: true` → auto-route through the **non-interactive design resolver** (`/aep-design`, no pause), then `/aep-launch`
+  - Otherwise → **ESCALATE** (pause for human design input)
 - **`attempt_count >= 2`** → always **ESCALATE** regardless of readiness (repeated failures need human attention)
 
 If escalation triggers: follow the pause protocol from the main SKILL.md. Do not dispatch.
@@ -411,8 +433,8 @@ If no escalation:
      "wave": 1,
      "readiness_score": 0.8,
      "routed_to": "launch",
-     "backend": "claude-team",
-     "agent_id": "<teammate name | bg session id | codex agent id | exec session id | tmux session name>",
+     "backend": "native-bg-subagent",
+     "agent_id": "<bare-hex bg-subagent id | bg session id | codex agent id | exec session id | tmux session name>",
      "phase": 0,
      "phase_name": "initializing",
      "story_status": "in_progress",
@@ -431,7 +453,7 @@ If no escalation:
 
    For grouped changes: `story_ids` contains all story IDs in the group, `compile_mode` is `"grouped_change"`, `change_group` is the group ID, and `story_id` is the first story in the group (used as the primary identifier).
 
-**Max ONE launch per tick.** Launching involves creating a git worktree, spawning a worker (teammate / bg session / subagent / exec / tmux), and delivering a bootstrap prompt — too slow for multiple per tick.
+**Max ONE launch per tick.** Launching involves creating a git worktree, spawning a worker (bg subagent / bg session / subagent / exec / tmux), running the post-spawn liveness probe, and delivering a bootstrap prompt — too slow for multiple per tick.
 
 ### Layer Completion
 
@@ -439,7 +461,10 @@ If all stories in the active layer are completed (after wraps):
 
 1. Suggest running the layer gate integration test
 2. If gate passes: update `layer_gates[layer].status: passed`
-3. **Outcome contract check:** If `product.layers[active_layer].outcome_contract` exists, add an escalation requesting the user to evaluate the outcome contract before advancing. Autopilot **pauses** — outcome evaluation requires human judgment (user testing, analytics, qualitative assessment). The user runs `/aep-reflect` which evaluates outcome contracts in Step 2.75. After `/aep-reflect` completes, resume autopilot.
+3. **Outcome contract check:** If `product.layers[active_layer].outcome_contract` exists, decide whether to auto-evaluate or pause:
+   - **Quantitative auto-eval:** If `topology.routing.auto_outcome_eval: quantitative` **and** the contract's metric is quantitative (a measurable threshold) → first run `coverage_check([metric])` (`../../../product-context/reflect/references/telemetry-ingestion.md` §1.5); if the metric isn't bound to a telemetry source (the `/aep-map` Telemetry Binding step wasn't done) → **pause** and escalate "run /aep-map observability step" (do not claim auto-coverage). If covered → auto-evaluate via the telemetry-ingestion recipe (ingest the telemetry, compare against the threshold) and **advance without pausing** when it passes. If the metric is qualitative, fall through to the pause rule below.
+   - **Qualitative / default pause:** Otherwise (no `auto_outcome_eval`, a qualitative metric, etc.) → **pause** and add an escalation requesting the user to evaluate the outcome contract before advancing — **UNLESS** `topology.routing.full_auto: true`, in which case auto-evaluate via the telemetry-ingestion recipe and advance without pause. Outcome evaluation otherwise requires human judgment (user testing, analytics, qualitative assessment). The user runs `/aep-reflect` which evaluates outcome contracts in Step 2.75. After `/aep-reflect` completes, resume autopilot.
+   - Default (no `auto_outcome_eval` / `full_auto` false) preserves the current human pause.
 4. If no outcome contract or outcome evaluation passes: advance to next layer
 5. If gate fails: add escalation, pause autopilot (layer gate failures require human judgment)
 6. If all layers complete: stop autopilot, notify human

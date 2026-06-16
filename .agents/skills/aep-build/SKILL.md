@@ -9,6 +9,8 @@ Autonomous feature implementation inside an isolated git worktree on a fresh `fe
 
 > **Phase numbering note:** Phases 1-3 (explore, propose, review) were completed on main via `/aep-design`. This skill begins at Phase 0 (workspace init) and continues from Phase 4 (implementation).
 
+> **Loop hygiene (G7):** Each phase runs under a unified `--max-turns` runaway budget. Hitting the cap is **not** completion — treat it as "possibly unsolvable → escalate" (Human-Gate Protocol, distinct from a genuine clean finish). This keeps a stuck phase (e.g. a non-converging Phase 5 loop) from silently burning turns and reading as done.
+
 **Where this fits:**
 
 ```
@@ -340,12 +342,12 @@ After implementation, verify the code before moving to testing. This phase uses 
 
 If `.dev-workflow/evaluator-criteria.md` exists (written during `/aep-launch`), spawn an evaluator via `executor.spawn_evaluator()`. The generator orchestrates the entire evaluation loop — no manual intervention needed. The spawn mechanism tracks the active executor mode (read `.claude/skills/aep-executor/references/backends.md`):
 
-| Generator mode                  | Evaluator spawn (`executor.spawn_evaluator`)                                                                                        | eval-protocol mechanism                                                           |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| **claude-team / claude-bg**     | **foreground Task subagent** in the generator's own session — inherits the worktree cwd; the evaluator prompt _is_ the spawn prompt | **Context B mechanism**, worktree-bound — _not_ its read-only `/aep-validate` use |
-| **codex-subagent / codex-exec** | `codex exec --cd <abs worktree>` with the `aep-evaluator` role — enforced cwd, bounded one-shot                                     | **Context C mechanism**, in-host headless — _not_ API/SDK CI                      |
-| **legacy** (tmux)               | `tmux split-window` — evaluator in a bottom pane                                                                                    | **Context A** (tmux split)                                                        |
-| **workflow**                    | the workflow's `verify` stage (worktree-isolated)                                                                                   | **Context C mechanism**, in-host — _not_ API/SDK CI                               |
+| Generator mode                     | Evaluator spawn (`executor.spawn_evaluator`)                                                                                        | eval-protocol mechanism                                                           |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| **native-bg-subagent / claude-bg** | **foreground Task subagent** in the generator's own session — inherits the worktree cwd; the evaluator prompt _is_ the spawn prompt | **Context B mechanism**, worktree-bound — _not_ its read-only `/aep-validate` use |
+| **codex-subagent / codex-exec**    | `codex exec --cd <abs worktree>` with the `aep-evaluator` role — enforced cwd, bounded one-shot                                     | **Context C mechanism**, in-host headless — _not_ API/SDK CI                      |
+| **legacy** (tmux)                  | `tmux split-window` — evaluator in a bottom pane                                                                                    | **Context A** (tmux split)                                                        |
+| **workflow**                       | the workflow's `verify` stage (worktree-isolated)                                                                                   | **Context C mechanism**, in-host — _not_ API/SDK CI                               |
 
 > **Always worktree-bound.** Whatever the mode, the evaluator runs against this
 > workspace's worktree (files + git state), per `executor.spawn_evaluator()`.
@@ -366,6 +368,18 @@ convergence rules are identical across modes.
 
 #### Evaluation round
 
+For each round N (starting at 1, max 5), the generator's response to a FAIL escalates along the **change-strategy recovery ladder** (`.claude/skills/aep-gen-eval/references/recovery-ladder.md`) rather than retrying the same way every round:
+
+| Eval round | Rung                   | Generator move                                                                                                                                                                                    |
+| ---------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1–2        | **Same fix**           | Same generator fixes the FAIL items in place (current default).                                                                                                                                   |
+| 3          | **Re-ground**          | Same generator re-reads the FULL spec + design + contracts from scratch, then re-attempts.                                                                                                        |
+| 4          | **Different approach** | Spawn a **fresh `native-bg-subagent` generator** told "the previous approach failed on X; take a different design path" — not anchored on the stuck solution (it inherits the existing worktree). |
+| 5          | **Decompose**          | Split the story into sub-tasks; attempt the **smallest viable slice** and surface the proposed split.                                                                                             |
+| after 5    | **Human gate**         | Ladder exhausted → escalate with type `eval_not_converging`.                                                                                                                                      |
+
+Track the rung with `eval_round` + `recovery_rung` in `status.json` (see the ladder's State Tracking). **Generator≠evaluator separation holds** — the evaluator only scores; re-grounding, a fresh generator, and decomposition are all generator-side moves. **Skip the ladder and escalate immediately** on a hard-failure / security FAIL (auth-model gap, data-exposure risk), a spec contradiction, or a missing external dependency — these need human judgment, not a different approach. See the ladder file for full rung rationale and the rung-4 fresh-generator spawn contract (`native-bg-subagent` + post-spawn liveness probe).
+
 For each round N (starting at 1, max 5):
 
 1. **Write eval-request** — create `.dev-workflow/signals/eval-request.md` per the format in `eval-protocol.md` (Signal Files section).
@@ -384,7 +398,7 @@ For each round N (starting at 1, max 5):
    ```
 
 3. **Spawn the evaluator (mode-dispatched, prompt = spawn prompt):**
-   - **claude-team / claude-bg:** spawn a **foreground Task subagent** with
+   - **native-bg-subagent / claude-bg:** spawn a **foreground Task subagent** with
      `EVAL_PROMPT`. It inherits the worktree cwd and returns when done — no
      sleep, no send step, no teardown.
    - **codex-subagent / codex-exec:**
@@ -421,10 +435,10 @@ For each round N (starting at 1, max 5):
 5. **Read the response.** Legacy only: close the evaluator pane
    (`tmux kill-pane -t :.1`). Native evaluators have already exited.
 
-6. **Fix FAIL items** — add follow-up commits addressing each FAIL item, then loop back to step 1 with round N+1. Do not rewrite history; the PR review should see the fix as new commits on top.
+6. **Fix FAIL items per the recovery rung** — add follow-up commits addressing each FAIL item, then loop back to step 1 with round N+1. On rounds 1–2 fix in place; on round 3 re-ground (re-read the full spec/design/contracts from scratch first); on round 4 spawn a fresh `native-bg-subagent` generator with a different approach; on round 5 decompose to the smallest viable slice. Do not rewrite history; the PR review should see the fix as new commits on top. (Hard-failure/security FAILs skip the ladder and escalate immediately — see the rung table above.)
 
-7. **Max 5 rounds** — if not converging, escalate to human via the **human-gate
-   protocol** (see below) and the convergence rules in `eval-protocol.md`.
+7. **Max 5 rounds** — once the ladder is exhausted (not converging after round 5), escalate to human via the **human-gate
+   protocol** (see below) with type `eval_not_converging`, recording the ladder history. See the convergence rules in `eval-protocol.md` and `recovery-ladder.md`.
 
 The evaluator also updates `.dev-workflow/feature-verification.json` with pass/fail results per the field ownership rules in `eval-protocol.md`.
 
@@ -466,11 +480,10 @@ do not guess and do not silently stall. Raise a gate:
    mode — see the Human-Gate Protocol in `aep-executor/references/backends.md`).
    The answer always comes back through the **main agent** (hub-and-spoke) —
    you never need the human to visit your surface:
-   - **claude-team:** `SendMessage` the team lead, message prefixed `HUMAN_GATE:`
    - **codex-subagent:** ask the parent thread (approvals surface natively)
    - **legacy:** the file is the transport — the orchestrator detects it and
      relays the answer via nudge
-   - **claude-bg / codex-exec / workflow / headless:** **gate-and-park** — no
+   - **native-bg-subagent / claude-bg / codex-exec / workflow / headless:** **gate-and-park** — no
      push channel reaches you, so after recording the gate: commit WIP (or
      leave the tree clean), update `status.json`, and **end your run cleanly**
      (workflow agents: return a structured `gated` result carrying the
@@ -489,21 +502,26 @@ do not guess and do not silently stall. Raise a gate:
 
 ## Phase 6: Browser Testing (Dogfood)
 
-> Skip if `agent-browser` is not installed. **Light mode:** Skip this phase.
+> **Light mode:** Skip this phase. Otherwise **do not skip just because `agent-browser` is absent** — pick a host-aware method and degrade (see below).
 
-**Port configuration:** Source `.dev-workflow/ports.env` to get the correct URLs:
+**Pick the method, host-aware.** Call `dogfood_method()` from `.claude/skills/aep-executor/references/dogfood-validation.md` to select the right **native** validation tool for this host/mode:
+
+- **Claude Code** (any mode) — `/agent-browser:dogfood` if `agent_browser_healthy()`; otherwise **degrade** (non-UI changes → API/curl checks; UI changes → human-eval) rather than skipping.
+- **Codex** — native in-app browser + computer-use (codex-subagent desktop), else a Playwright script (codex-exec headless), falling back to the agent-browser CLI, then API checks.
+
+**Target URL stays local.** Resolve via `target_url(local)` from `dogfood-validation.md` — source `.dev-workflow/ports.env` and use `$BASE_URL`:
 
 ```bash
-source .dev-workflow/ports.env
+source .dev-workflow/ports.env   # target_url(local) → $BASE_URL
 ```
 
-Use agent-browser to systematically explore and test the application:
+If the selected method is `/agent-browser:dogfood`, run it against `$BASE_URL`:
 
 ```
 /agent-browser:dogfood
 ```
 
-Document results in `.dev-workflow/dogfood-<feature>.md`.
+Whatever the method, emit the unified severity/category/repro report format (see `dogfood-validation.md` → Unified report format) so the downstream classifier stays host-agnostic. Document results in `.dev-workflow/dogfood-<feature>.md` — **write the report file, not just chat output**: that path is the ingestion contract (`dogfood-validation.md` → On issue), so `/aep-watch`'s `dogfood_report` source can auto-file bug/refinement findings. Findings left only in chat are a dead end.
 
 > **Signal update:** Update `.dev-workflow/signals/status.json` with `"phase": 6, "phase_name": "dogfood-testing"`.
 
@@ -732,7 +750,7 @@ REMOTE_URL=$(git remote get-url origin)
 - **Use `git push --force-with-lease`, never `--force`** — the `lease` variant fails safely if someone else pushed to the same branch since your last fetch.
 - **Signal updates are required** — update `.dev-workflow/signals/status.json` at the start and end of every phase. Check `.dev-workflow/signals/feedback.md` for main session feedback at phase boundaries.
 - **Generator must not modify verification data** — never modify `verification_steps` or `passes` in `feature-verification.json`. Only `commit_sha` is generator-writable. The evaluator or human updates `passes` / `evaluated_by` / `round`.
-- **Evaluator loop max 5 rounds** — if the generator-evaluator loop hasn't converged after 5 rounds, escalate to human.
+- **Evaluator loop max 5 rounds, climbing the recovery ladder** — the generator escalates its strategy per round (same fix → re-ground → fresh generator → decompose) per `recovery-ladder.md`; only once the ladder is exhausted (after round 5) does it escalate to human as `eval_not_converging`. Hard-failure/security FAILs skip the ladder and escalate on the first occurrence.
 - **Raise human gates, don't guess** — decisions only the human can make go through the Human-Gate Protocol (`needs-human.md` + `blocked_on: "human"` + your mode's transport). Silent stalls read as stuck; unrecorded guesses read as scope drift.
 
 ---

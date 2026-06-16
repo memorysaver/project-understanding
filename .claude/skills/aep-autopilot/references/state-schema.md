@@ -20,8 +20,8 @@ Machine-readable state file. Read and written by the autopilot tick.
   "workspaces": {
     "auth-middleware": {
       "story_id": "PROJ-003",
-      "backend": "claude-team",
-      "agent_id": "auth-middleware",
+      "backend": "native-bg-subagent",
+      "agent_id": "adfb6cb206155a92e",
       "phase": 5,
       "phase_name": "code-review",
       "story_status": "in_progress",
@@ -55,6 +55,18 @@ Machine-readable state file. Read and written by the autopilot tick.
     }
   ],
 
+  "guard_state": {
+    "PROJ-002": {
+      "pr_number": 142,
+      "deploy_status": "deployed",
+      "monitor_until": "2026-04-01T10:40:00Z",
+      "health": { "ci_status": "green", "error_rate": "ok", "health_endpoint": "ok" },
+      "dogfood_done": true,
+      "reverted": false,
+      "escalated": false
+    }
+  },
+
   "stats": {
     "stories_completed": 3,
     "stories_failed": 0,
@@ -79,27 +91,27 @@ Machine-readable state file. Read and written by the autopilot tick.
 
 #### Workspace Entry
 
-| Field                      | Type         | Description                                                                                                              |
-| -------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `story_id`                 | string       | Story ID from product-context.yaml                                                                                       |
-| `backend`                  | string       | Executor mode this workspace was launched under: `claude-team`, `claude-bg`, `codex-subagent`, `codex-exec`, `legacy`    |
-| `agent_id`                 | string\|null | Handle for nudge/liveness/teardown: teammate name / bg session id / codex agent id / exec session id / tmux session name |
-| `phase`                    | number       | Current build phase (0-12) from signal                                                                                   |
-| `phase_name`               | string       | Human-readable phase name from signal                                                                                    |
-| `story_status`             | string       | `"in_progress"`, `"in_review"`, `"completed"`, `"failed"`                                                                |
-| `completion_pct`           | number       | 0-100 from signal                                                                                                        |
-| `pr_url`                   | string\|null | PR URL once created                                                                                                      |
-| `cost_usd`                 | number\|null | Accumulated cost from signal                                                                                             |
-| `completed_at`             | string\|null | ISO8601 completion timestamp                                                                                             |
-| `failure_log`              | object\|null | Structured failure from signal                                                                                           |
-| `last_action`              | string       | Last autopilot action for this workspace                                                                                 |
-| `last_action_at`           | string       | ISO8601 of last action                                                                                                   |
-| `code_review_triggered`    | boolean      | Whether autopilot has triggered gen/eval                                                                                 |
-| `code_review_triggered_at` | string\|null | When gen/eval was triggered                                                                                              |
+| Field                      | Type         | Description                                                                                                                          |
+| -------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `story_id`                 | string       | Story ID from product-context.yaml                                                                                                   |
+| `backend`                  | string       | Executor mode this workspace was launched under: `native-bg-subagent`, `claude-bg`, `codex-subagent`, `codex-exec`, `legacy`         |
+| `agent_id`                 | string\|null | Handle for nudge/liveness/teardown: bg-subagent id (bare-hex) / bg session id / codex agent id / exec session id / tmux session name |
+| `phase`                    | number       | Current build phase (0-12) from signal                                                                                               |
+| `phase_name`               | string       | Human-readable phase name from signal                                                                                                |
+| `story_status`             | string       | `"in_progress"`, `"in_review"`, `"completed"`, `"failed"`                                                                            |
+| `completion_pct`           | number       | 0-100 from signal                                                                                                                    |
+| `pr_url`                   | string\|null | PR URL once created                                                                                                                  |
+| `cost_usd`                 | number\|null | Accumulated cost from signal                                                                                                         |
+| `completed_at`             | string\|null | ISO8601 completion timestamp                                                                                                         |
+| `failure_log`              | object\|null | Structured failure from signal                                                                                                       |
+| `last_action`              | string       | Last autopilot action for this workspace                                                                                             |
+| `last_action_at`           | string       | ISO8601 of last action                                                                                                               |
+| `code_review_triggered`    | boolean      | Whether autopilot has triggered gen/eval                                                                                             |
+| `code_review_triggered_at` | string\|null | When gen/eval was triggered                                                                                                          |
 
 | `eval_rounds_completed` | number | How many eval rounds the workspace has completed |
 | `consecutive_stuck_ticks` | number | Ticks with no progress change |
-| `last_liveness_hash` | string\|null | Hash of the mode's liveness-probe output at last tick (TaskList entry / logs tail / list_agents / worker.log / tmux pane). Used for liveness comparison. Null on first tick or after restart. |
+| `last_liveness_hash` | string\|null | Hash of the mode's liveness-probe output at last tick (TaskList entry / worktree-activity probe / logs tail / worker.log / tmux pane). Used for liveness comparison. Null on first tick or after restart. |
 | `blockers` | string[] | Current blockers from signal |
 
 #### `last_action` Values
@@ -121,16 +133,32 @@ Machine-readable state file. Read and written by the autopilot tick.
 
 #### Escalation Entry
 
-| Field                   | Type         | Description                                                                                              |
-| ----------------------- | ------------ | -------------------------------------------------------------------------------------------------------- |
-| `type`                  | enum         | `"design_needed"`, `"stuck"`, `"failed"`, `"layer_gate_failed"`, `"eval_not_converging"`, `"human_gate"` |
-| `story_id`              | string       | Related story ID                                                                                         |
-| `workspace`             | string\|null | Workspace name (null if not yet launched)                                                                |
-| `reason`                | string       | One-line reason                                                                                          |
-| `details`               | string       | Detailed explanation of why escalation triggered                                                         |
-| `expected_human_action` | string       | What the human should do                                                                                 |
-| `created_at`            | string       | ISO8601 timestamp                                                                                        |
-| `acknowledged`          | boolean      | Whether human has seen this                                                                              |
+| Field                   | Type         | Description                                                                                                                         |
+| ----------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `type`                  | enum         | `"design_needed"`, `"stuck"`, `"failed"`, `"layer_gate_failed"`, `"eval_not_converging"`, `"human_gate"`, `"post_merge_regression"` |
+| `story_id`              | string       | Related story ID                                                                                                                    |
+| `workspace`             | string\|null | Workspace name (null if not yet launched)                                                                                           |
+| `reason`                | string       | One-line reason                                                                                                                     |
+| `details`               | string       | Detailed explanation of why escalation triggered                                                                                    |
+| `expected_human_action` | string       | What the human should do                                                                                                            |
+| `created_at`            | string       | ISO8601 timestamp                                                                                                                   |
+| `acknowledged`          | boolean      | Whether human has seen this                                                                                                         |
+
+#### `guard_state` Entry (post-merge guard, keyed by story_id)
+
+Persists the post-merge guard's per-story state so a tick is idempotent
+(deploy-once, dogfood-once, revert-once, escalate-once). See
+`references/post-merge-guard.md`.
+
+| Field           | Type    | Description                                                                       |
+| --------------- | ------- | --------------------------------------------------------------------------------- |
+| `pr_number`     | number  | Merged PR being guarded                                                           |
+| `deploy_status` | enum    | `"pending"`, `"deployed"`, `"failed"`                                             |
+| `monitor_until` | string  | ISO8601 — end of the `window_min` monitoring window                               |
+| `health`        | object  | Last reading per configured `health_signals` key (e.g. `ci_status`, `error_rate`) |
+| `dogfood_done`  | boolean | Whether host-aware post-deploy dogfood has run for this story                     |
+| `reverted`      | boolean | Whether a revert was already issued (guards against double-revert)                |
+| `escalated`     | boolean | Whether a `post_merge_regression` escalation was already emitted                  |
 
 ---
 

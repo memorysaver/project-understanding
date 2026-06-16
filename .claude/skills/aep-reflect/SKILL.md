@@ -44,9 +44,12 @@ Collect observations from all sources. Read product definition (from `product/in
 - **Error logs / monitoring:** Runtime failures, performance issues, unexpected behavior
 - **Cost data:** Review the `cost` section of `product-context.yaml`. If agent execution traces exist, review per-story costs. Which story types were expensive? Where did retries concentrate?
 - **Product instincts:** After seeing the thing work, what does the user's gut say? What feels right, what feels off?
+- **Dogfood reports:** Read `.dev-workflow/dogfood-*.md` (the unified severity/category/repro format). Normalize each `##` finding via the `dogfood_report` adapter (`references/telemetry-ingestion.md` → Dogfood-report adapter) into the same observation record Step 2 classifies — the same source `/aep-watch` ingests headlessly.
 - **Lessons learned:** Read `lessons-learned/*.md` for observations captured by workspace agents during builds. Summarize patterns across recent lessons — recurring errors, solutions that worked, missing documentation.
 
 Ask the user one source at a time. Don't rush — the quality of classification depends on the quality of input.
+
+**Automated ingestion (optional):** Automated sources — error logs, analytics, monitoring — can be pulled in directly per `references/telemetry-ingestion.md`, normalized into the same observation format Step 2 classifies. Configure endpoints under `topology.routing.telemetry_sources`. Automation **augments** the interactive sources above; it does not replace them — ingested records are merged with the human input before classification, and the human still reviews each classification.
 
 ---
 
@@ -139,6 +142,12 @@ If the completed layer has an `outcome_contract` defined in `product.layers[]`:
      type: outcome_evaluation
      summary: "Layer N outcome contract: [passed/failed] — [metric] was [actual] vs target [target]"
    ```
+
+**Auto-evaluation (optional, opt-in):** The pause above can be skipped per `references/telemetry-ingestion.md`:
+
+- If `topology.routing.auto_outcome_eval: quantitative` **and** the success metric is quantitative (a numeric target measurable from analytics/monitoring) → first run `coverage_check([metric])` (`references/telemetry-ingestion.md` §1.5): if the metric isn't bound to a telemetry source (the `/aep-map` Telemetry Binding step wasn't done), **fall back to the human pause** and note "run /aep-map observability step". If covered → fetch the actual value per `references/telemetry-ingestion.md`, apply `keep_if`/`otherwise` mechanically, and record the result in the changelog — no pause. (A fetch failure also falls back to the human pause.)
+- **Qualitative** metrics still pause for the human as described above — **unless** `topology.routing.full_auto: true`, in which case the agent evaluates the qualitative metric by its own judgment and applies the decision rule with no pause.
+- Default (`auto_outcome_eval: none`, `full_auto: false`) preserves the current human-in-the-loop behavior exactly.
 
 If no outcome contract exists for the completed layer, skip this step.
 

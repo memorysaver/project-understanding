@@ -13,7 +13,7 @@ Set up your environment for agentic TypeScript development AND get oriented to h
 
 > **Returning user?** If you've run `/aep-onboard` before and you're just re-verifying your environment, skip to Phase 1.
 
-Before installing tools, get the mental model. AEP is not a "command runner" — it's a workflow that separates _thinking_ (what to build) from _doing_ (building it). Installing the tools without understanding this will leave you staring at a blank terminal wondering which of 16 skills to run first.
+Before installing tools, get the mental model. AEP is not a "command runner" — it's a workflow that separates _thinking_ (what to build) from _doing_ (building it). Installing the tools without understanding this will leave you staring at a blank terminal wondering which of 17 skills to run first.
 
 **The three mental models you need:**
 
@@ -25,7 +25,7 @@ Before installing tools, get the mental model. AEP is not a "command runner" —
 
 **v2 split-mode (good to know):** Some projects store product context in two files — `product/index.yaml` (stable intent: opportunity, personas, capabilities, constraints) + `product-context.yaml` (mutable state: architecture, stories, cost, changelog). All skills auto-detect which mode a project uses. If you see only `product-context.yaml`, that's v1 single-file mode and it works exactly the same way. See [docs/aep-v2-improvement-guideline.md](../../../docs/aep-v2-improvement-guideline.md).
 
-**Next step:** for the full 10-minute first-hour guide — including a table of all 16 skills, four concrete paths (new product / existing project / single feature / hands-free), and a glossary shortlist — read **[docs/orientation.md](../../../docs/orientation.md)**. Then come back to Phase 1.
+**Next step:** for the full 10-minute first-hour guide — including a table of all 17 skills, four concrete paths (new product / existing project / single feature / hands-free), and a glossary shortlist — read **[docs/orientation.md](../../../docs/orientation.md)**. Then come back to Phase 1.
 
 ---
 
@@ -59,7 +59,7 @@ npx skills add memorysaver/skills@<latest-tag> -a claude-code \
 
 ## Phase 2 — Verify Required Tools
 
-Each tool below earns its place in the agentic workflow — `git` provides version control and worktrees (one isolated working tree per parallel agent), `bun` runs the TypeScript monorepo, `openspec` powers spec-driven development, an **executor** (`claude` _or_ `codex`) runs the implementation agents, and `gh` publishes PRs. `tmux` is **optional**: launches are native-first (Claude Code agent teams / background sessions, Codex subagents — see `aep-executor`); tmux only hosts the pinned **legacy** mode and the generic-host fallback.
+Each tool below earns its place in the agentic workflow — `git` provides version control and worktrees (one isolated working tree per parallel agent), `bun` runs the TypeScript monorepo, `openspec` powers spec-driven development, an **executor** (`claude` _or_ `codex`) runs the implementation agents, and `gh` publishes PRs. `tmux` is **optional**: launches are native-first (Claude Code native background subagents / background sessions, Codex subagents — see `aep-executor`); tmux only hosts the pinned **legacy** mode and the generic-host fallback.
 
 Run this check:
 
@@ -96,9 +96,9 @@ before proceeding. You need **at least one executor** (claude or codex) — not
 both. `tmux` may be MISSING; that's fine — launches are native-first.
 
 > **Native-first launches:** the executor abstraction picks the host's native
-> mode automatically — Claude Code agent teams (`claude-team`) or background
-> sessions (`claude-bg`); Codex native subagents (`codex-subagent`) or exec
-> workers (`codex-exec`). All include live monitoring and steering without
+> mode automatically — Claude Code background subagents (`native-bg-subagent`) or
+> background sessions (`claude-bg`); Codex native subagents (`codex-subagent`) or
+> exec workers (`codex-exec`). All include live monitoring and steering without
 > tmux. See `aep-executor` and the "Enable the native launch modes" step in
 > Phase 5.
 
@@ -277,20 +277,15 @@ fi
 ### Enable the native launch modes (recommended)
 
 `/aep-launch` and `/aep-autopilot` pick the launch mode automatically (see
-`aep-executor`): native first, tmux only when pinned. Two one-time setup steps
-unlock the best native modes:
+`aep-executor`): native first, tmux only when pinned. The native modes need no
+flag; one one-time setup step unlocks the best Codex mode:
 
-**Claude Code — agent teams (`claude-team` mode).** Agent teams is still
-experimental (flag-gated, Claude Code ≥ 2.1.32). Enable it per-project via the
-`env` block of `.claude/settings.json` (a settings entry, **not** a hook —
-AEP's no-hooks stance is unaffected). Ask the user before writing:
-
-```json
-{ "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" } }
-```
-
-Without the flag, launches fall back to `claude-bg` (native background
-sessions, GA) — fully functional, with pull-based steering.
+**Claude Code — background subagents (`native-bg-subagent` mode).** This is the
+Claude Code default — the Agent tool with `run_in_background: true`, no
+`team_name`, spawned with no active team. **No flag or settings change is
+required** (agent teams has been removed). If the host can't run a background
+subagent, launches fall back to `claude-bg` (native background sessions, GA) —
+fully functional, with pull-based steering.
 
 **Codex — custom agent roles (`codex-subagent` mode).** Commit the two AEP
 role files into the project's `.codex/agents/` so both the desktop app and the
@@ -369,7 +364,7 @@ Pointers for going deeper. None of these are required reading — check what's r
 
 **Mental models & concepts**
 
-- [docs/orientation.md](../../../docs/orientation.md) — the canonical first-hour guide (mental models + 16 skills + four paths)
+- [docs/orientation.md](../../../docs/orientation.md) — the canonical first-hour guide (mental models + 17 skills + four paths)
 - [README.md "Why This Exists"](../../../README.md#why-this-exists) — the full argument for spec-precision-over-execution-speed
 - [docs/glossary.md](../../../docs/glossary.md) — precise definitions for every AEP term (ubiquitous language)
 
