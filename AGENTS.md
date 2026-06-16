@@ -75,7 +75,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 This project follows the [Agentic Engineering Patterns](https://github.com/memorysaver/agentic-engineering-patterns)
 (AEP) workflow — a spec-driven, multi-agent feature lifecycle. Its `aep-*` skills (in
-`.claude/skills/` and `.agents/skills/`, pinned at **v1.7.0**) are self-describing; use them for
+`.claude/skills/` and `.agents/skills/`, pinned at **v2.0.1**) are self-describing; use them for
 feature work and start with **`aep-onboard`** for the mental model.
 
 All AEP commands carry the `aep-` prefix — invoke `/aep-dispatch`, `/aep-launch`, `/aep-build`,
