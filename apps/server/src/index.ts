@@ -7,7 +7,7 @@ import { onError } from "@orpc/server";
 import { createContext } from "@paperlens/api/context";
 import { appRouter } from "@paperlens/api/routers/index";
 import { createAuth } from "@paperlens/auth";
-import { runOnce } from "@paperlens/orchestrator";
+import { dispatch, parsePipelineMessage, type PipelineMessage } from "@paperlens/orchestrator";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
@@ -76,15 +76,39 @@ app.get("/", (c) => {
   return c.text("OK");
 });
 
-// Dev-only L0 trigger (PL-007): run the full inline pipeline for one hardcoded
-// arXiv id and return the published Post. Guarded so it is never mounted in
-// production. Real clients are wired by `runOnce`'s defaults (db, llm, arXiv/
-// full-text fetchers).
-if (globalThis.process?.env?.NODE_ENV !== "production") {
-  app.post("/dev/run-once", async (c) => {
-    const post = await runOnce();
-    return c.json(post);
-  });
+/**
+ * Cloudflare Queue consumer (PL-018). A thin router: read each message's `type`
+ * and hand it to the orchestrator's `dispatch`, which holds all pipeline logic
+ * (loading intermediates, advancing `Paper.status`, enqueuing the next stage)
+ * and the resume/idempotency + terminal-failure handling. The orchestrator
+ * resolves the real `DB` + `PIPELINE_QUEUE` bindings from its own defaults, so no
+ * dependencies are threaded here. An unknown message type is acked without
+ * advancing any Paper.
+ */
+async function queue(batch: MessageBatch<PipelineMessage>): Promise<void> {
+  for (const message of batch.messages) {
+    const parsed = parsePipelineMessage(message.body);
+    if (!parsed) {
+      console.error(`queue consumer: rejecting unknown message`, message.body);
+      message.ack(); // not a valid pipeline message — drop it, advance nothing
+      continue;
+    }
+    try {
+      // `message.attempts` is 1-based; `maxRetries` mirrors the consumer binding
+      // (alchemy.run.ts eventSources). On a within-budget throw the Queue
+      // redelivers; once exhausted the orchestrator marks the Paper failed.
+      await dispatch(parsed, {}, { attempt: message.attempts, maxRetries: 3 });
+      message.ack();
+    } catch (error) {
+      console.error(`queue consumer: ${parsed.type} threw, will retry`, error);
+      message.retry();
+    }
+  }
 }
 
-export default app;
+// The server Worker hosts both the `fetch` handler (oRPC + auth, unchanged) and
+// the pipeline Queue `queue()` consumer.
+export default {
+  fetch: app.fetch,
+  queue,
+};
