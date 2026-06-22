@@ -27,6 +27,13 @@ calibration:
       artifact_path: "calibration/visual-design.yaml"
       sections_updated: []
       summary: "Direction A 'The Periodical' — warm paper + ink, single burnt-amber accent, Fraunces (display) + Newsreader (body) serif type; palette + fonts written to globals.css. Reader-surface only; Console treated later (1.5)."
+    - dimension: copy-tone
+      calibrated_at: "2026-06-22"
+      calibrated_from_layer: 0.5
+      mode: establishment
+      artifact_path: "calibration/copy-tone.yaml"
+      sections_updated: []
+      summary: "Default editorial voice — Stylist's StylePrompt. Owner chose: Stratechery-style analyst voice, light first-person editorial, reframed editorial headlines (not the paper's literal title), embrace jargon but unpack one level. Enacted in DEFAULT_STYLE_PROMPT (packages/db/src/seed.ts); faithfulness guard (PL-030/031) baked in."
 
 # ─── ARCHITECTURE (/map Step 1) ──────────────────────────────
 architecture:
@@ -308,7 +315,12 @@ stories:
       implements: ["db accessors for Paper/Digest/StylePrompt/Post/Run"]
       consumes: []
       contract_tests_required: false
-    files_affected: ["packages/db/src/schema/index.ts", "packages/db/src/schema/paperlens.ts", "packages/db/src/migrations/"]
+    files_affected:
+      [
+        "packages/db/src/schema/index.ts",
+        "packages/db/src/schema/paperlens.ts",
+        "packages/db/src/migrations/",
+      ]
     technical_notes: "Cloudflare D1 (drizzle-orm/d1). Keep auth tables untouched."
     verification:
       unit: ["dedup no-op on duplicate arxiv_id", "single active StylePrompt invariant"]
@@ -703,7 +715,12 @@ stories:
       implements: []
       consumes: []
       contract_tests_required: false
-    files_affected: ["apps/web/src/index.css", "apps/web/src/routes/index.tsx", "apps/web/src/routes/posts.$id.tsx"]
+    files_affected:
+      [
+        "apps/web/src/index.css",
+        "apps/web/src/routes/index.tsx",
+        "apps/web/src/routes/posts.$id.tsx",
+      ]
     technical_notes: "Run /calibrate visual-design before/with this story."
     verification:
       unit: []
@@ -1262,7 +1279,12 @@ stories:
       implements: []
       consumes: ["digestor.run", "orchestrator.runOnce"]
       contract_tests_required: false
-    files_affected: ["packages/digestor/src/index.ts", "packages/digestor/src/full-text.ts", "packages/orchestrator/src/index.ts"]
+    files_affected:
+      [
+        "packages/digestor/src/index.ts",
+        "packages/digestor/src/full-text.ts",
+        "packages/orchestrator/src/index.ts",
+      ]
     technical_notes: "Found via the L0 gate re-run on abstract-only papers (2026-06-15). Likely needs a source_kind (full_text|abstract) signal threaded digestor->digest, and a policy to defer abstract-only papers until ar5iv HTML renders."
     verification:
       unit: ["abstract-only digest invents no numbers", "full-text vs abstract-only detection"]
@@ -1300,7 +1322,12 @@ stories:
       implements: []
       consumes: ["digestor.run", "orchestrator.runOnce"]
       contract_tests_required: false
-    files_affected: ["packages/digestor/src/index.ts", "packages/orchestrator/src/index.ts", "packages/db/src/schema/paperlens.ts"]
+    files_affected:
+      [
+        "packages/digestor/src/index.ts",
+        "packages/orchestrator/src/index.ts",
+        "packages/db/src/schema/paperlens.ts",
+      ]
     technical_notes: "Carries the deferred half of PL-030 (source_kind persistence + orchestrator deferral). source_kind threads digestor -> digest row. Deferral policy: requeue abstract-only papers with a backoff until fetchArxivFullText returns more than the abstract."
     verification:
       unit: ["digest records source_kind", "orchestrator defers/flags abstract-only paper"]
@@ -1633,5 +1660,11 @@ changelog:
     type: calibration
     author: agent
     summary: "Calibrated visual-design (Layer 0.5, establishment) for the reader surface. Owner chose Direction A 'The Periodical' and delegated execution; researched editorial references (Stratechery, The Browser, New Yorker, Every.to) via agent-browser screenshots in docs/design-references/. Locked: warm paper + warm ink, a single burnt-amber accent, Fraunces (display) + Newsreader (body) literary serif type, Inter for UI chrome, flatter radius, light-default with a warm dark mode. Wrote calibration/visual-design.yaml (authoritative) and applied the palette + fonts to packages/ui/src/styles/globals.css (replacing the stock shadcn grayscale default; fonts were previously declared but never loaded). Reader is now serif-bodied by default; component-level application to feed/article is the PL-012 build, dispatched later. Console gets its own treatment at Layer 1.5."
+    sections_changed:
+      - calibration
+  - date: "2026-06-22"
+    type: calibration
+    author: agent
+    summary: "Calibrated copy-tone (Layer 0.5, establishment) — the default editorial voice (the Stylist's StylePrompt), PaperLens's core differentiator. Owner decided: Stratechery-style analyst voice, light first-person editorial, reframed editorial headlines (capture the idea, not the paper's literal title), embrace jargon but unpack a niche term on first use. Wrote calibration/copy-tone.yaml (authoritative — voice, post structure, microcopy patterns, glossary) and enacted it by replacing DEFAULT_STYLE_PROMPT in packages/db/src/seed.ts (the generic v1 'short engaging blog post' string -> a structured periodical voice with the lead/contribution/how/limits/take shape). The faithfulness guard (no invented numbers/benchmarks/datasets; stay qualitative if the source is thin) is baked into the prompt, consistent with PL-030/PL-031. Reader UI microcopy is fine as-is and will inherit the register at the PL-012 build."
     sections_changed:
       - calibration

@@ -1,0 +1,84 @@
+# copy-tone calibration — PaperLens
+# Authoritative voice + copy reference. Primary surface: the default StylePrompt
+# (the editorial voice of every post). Secondary: reader UI microcopy.
+
+schema: v1
+project: PaperLens
+calibrated_at: "2026-06-22"
+calibrated_from_layer: 0.5
+
+voice:
+  personality: >-
+    A literate editor with a point of view — analytical and first-principles
+    (Stratechery-like), plain-spoken, lightly first-person, with dry wit and zero
+    hype. A sharp newsletter, not a press release or a voiceless bullet summary.
+  references:
+    - "Stratechery (Ben Thompson) — first-principles, why-it-matters analysis (primary anchor)"
+    - "Quanta Magazine — clear, elegant explanation of hard ideas"
+    - "Money Stuff (Matt Levine) — a touch of dry wit (seasoning, not the core)"
+  anti_references:
+    - "Press-release / breathless launch hype"
+    - "Voiceless bullet-wall summarizers ('In this paper, the authors propose...')"
+    - "LinkedIn thought-leader / SEO-listicle tone"
+
+# Owner decisions (PL-013 calibration, 2026-06-22):
+#   voice anchor = Stratechery analyst · address = light first-person editorial
+#   headlines = reframed editorial · jargon = embrace + unpack one level
+decisions:
+  voice_anchor: stratechery-analyst
+  address: light-first-person-editorial
+  headlines: reframed-editorial
+  jargon: embrace-unpack-one-level
+
+# The voice of a published post — the dominant "copy" surface. Enacted in
+# packages/db/src/seed.ts (DEFAULT_STYLE_PROMPT).
+post:
+  length: "~250-450 words"
+  structure:
+    - "Lead: why it matters — the stakes, the surprise, or what it changes (never 'In this paper')"
+    - "The one key contribution, explained clearly"
+    - "How it works, in a sentence or two"
+    - "What it does NOT settle — limits, open questions"
+    - "Close: a one-line take on who should care or what to watch"
+  address: "Light first person; address the reader directly when it helps. An editor with a view."
+  wit: "Dry wit welcome; hype forbidden."
+  title: >-
+    Reframed editorial headline that captures the idea/stakes (sentence case), NOT the
+    paper's literal title. The literal title stays in the citation/source link.
+  faithfulness: >-
+    Hard constraint (faithfulness gate, PL-030/PL-031): never invent numbers, benchmarks,
+    datasets, or results the source does not contain; if the source is thin, stay
+    qualitative. A distinctive voice that fabricates is worse than no voice.
+
+patterns:
+  headings: >-
+    Post titles: reframed editorial headlines (idea/stakes), sentence case, no clickbait.
+    UI headings: plain, sentence case, no articles (e.g. 'Latest').
+  buttons: "Verb-first and plain (e.g. 'View source paper'); minimal on the reader surface."
+  errors: >-
+    Matter-of-fact and brief, no apology theatre (e.g. 'Post not found — this article
+    doesn't exist or isn't published.')
+  empty_states: "Calm and minimal-instructional (e.g. 'No posts published yet.')."
+  confirmations: "Brief and specific (e.g. 'Saved.') — mostly Console-era (Layer 1)."
+  placeholders: "Example values, not instructions — Console-era (Layer 1)."
+
+jargon:
+  approach: embrace
+  notes: >-
+    Use the field's real terminology — the owner is reader #1 and the audience is
+    technical. Define a niche term the first time it appears; don't translate domain
+    language away into watered-down plain English.
+
+glossary:
+  - term: "PaperLens"
+    use: "Always one word, capital P and L. The product / the editorial voice."
+    avoid: "Paperlens, Paper Lens, 'the app'."
+  - term: "post"
+    use: "The published piece readers see on the feed/article page."
+    avoid: "Don't drift between 'summary' / 'article' / 'digest' for the reader-facing piece — prefer 'post'."
+  - term: "digest"
+    use: "The internal structured extraction from the paper (a pipeline stage), not reader-facing."
+    avoid: "Don't call the published post a 'digest' in reader copy."
+  - term: "the paper / the source paper"
+    use: "The arXiv paper a post is based on."
+    avoid: "'the study', 'the research' (drifts)."
