@@ -1,4 +1,5 @@
 import { ORPCError } from "@orpc/server";
+import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { stylePrompts } from "@paperlens/db/schema/paperlens";
 import { protectedProcedure } from "../index";
@@ -23,3 +24,25 @@ export const getActivePrompt = protectedProcedure.handler(async ({ context }) =>
 
   return prompt;
 });
+
+// updateActivePrompt — persist new content for the active StylePrompt, keeping
+// exactly one active prompt. Updates the active row's content in place inside a
+// single transaction, so the PL-001 single-active invariant (exactly one
+// is_active = true) is never violated — no second active row is ever created.
+export const updateActivePrompt = protectedProcedure
+  .input(z.object({ content: z.string().min(1) }))
+  .handler(async ({ context, input }) => {
+    return context.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(stylePrompts)
+        .set({ content: input.content })
+        .where(eq(stylePrompts.isActive, true))
+        .returning({ id: stylePrompts.id, content: stylePrompts.content });
+
+      if (!updated) {
+        throw new ORPCError("NOT_FOUND", { message: "No active style prompt" });
+      }
+
+      return updated;
+    });
+  });
