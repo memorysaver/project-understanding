@@ -890,7 +890,9 @@ stories:
     activity: null
     calibration_type: null
     slice: 1
-    status: pending
+    status: in_progress
+    openspec_change: PL-018
+    readiness_score: 0.9
     priority: critical
     business_value: 9
     complexity: L
