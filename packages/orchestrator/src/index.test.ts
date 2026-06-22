@@ -256,6 +256,45 @@ describe("PL-018 orchestrator — 6.2 idempotent stage re-run", () => {
     )[0]!;
     expect(paper.status).toBe("published");
   });
+
+  // Resume-from-stage robustness: a partial style run (status advanced to `styled`
+  // by the stylist, but the orchestrator crashed before writing the draft Post)
+  // must resume — a redelivered style re-runs the stylist and writes the draft,
+  // and publish then succeeds. The guard keys on the intermediate, not the status.
+  test("a styled paper missing its draft Post re-runs the stylist on redelivery (resume), then publishes", async () => {
+    const db = await makeDb();
+    const { queue, sent } = fakeQueue();
+    const llm = mockComplete();
+    const deps = makeDeps(db, queue, llm.fn);
+    await handleDiscover({ type: "discover", runId: "r" }, deps);
+    await handleDigest({ type: "digest", arxiv_id: FIXTURE_ID, runId: "r" }, deps);
+    await handleStyle({ type: "style", arxiv_id: FIXTURE_ID, runId: "r" }, deps);
+
+    // Simulate the crash window: status is `styled` but the draft Post is gone.
+    await db.delete(schema.posts).where(eq(schema.posts.paperId, FIXTURE_ID));
+    const paperBefore = (
+      await db.select().from(schema.papers).where(eq(schema.papers.arxivId, FIXTURE_ID))
+    )[0]!;
+    expect(paperBefore.status).toBe("styled");
+    sent.length = 0;
+
+    // Redeliver style: it must re-create the draft (not skip on status), then publish.
+    await handleStyle({ type: "style", arxiv_id: FIXTURE_ID, runId: "r" }, deps);
+    const drafts = await db
+      .select()
+      .from(schema.posts)
+      .where(and(eq(schema.posts.paperId, FIXTURE_ID), eq(schema.posts.status, "draft")));
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]!.body).toBe(STYLED_BODY);
+    expect(sent).toEqual([{ type: "publish", arxiv_id: FIXTURE_ID, runId: "r" }]);
+
+    await handlePublish({ type: "publish", arxiv_id: FIXTURE_ID, runId: "r" }, deps);
+    const paper = (
+      await db.select().from(schema.papers).where(eq(schema.papers.arxivId, FIXTURE_ID))
+    )[0]!;
+    expect(paper.status).toBe("published");
+    expect(await db.select().from(schema.posts)).toHaveLength(1);
+  });
 });
 
 describe("PL-018 orchestrator — 6.3 failure after max retries", () => {

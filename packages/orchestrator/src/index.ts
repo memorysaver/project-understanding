@@ -202,8 +202,10 @@ export async function handleDigest(
  * (one LLM call → returns the styled body and advances `digested → styled`),
  * persist the styled body as the durable style intermediate (a single
  * `draft` Post per paper, upserted in place), then enqueue `publish`. Resume-safe:
- * if the Paper is already at/past `styled`, the stylist is skipped and `publish`
- * is re-enqueued from the existing draft Post.
+ * the stylist is re-run only when no Post (draft or published) exists yet, so a
+ * redelivery whose prior run advanced `status` but crashed before writing the draft
+ * still produces the intermediate; once a Post exists, `publish` is re-enqueued
+ * from it without re-styling.
  */
 export async function handleStyle(
   message: Extract<PipelineMessage, { type: "style" }>,
@@ -213,7 +215,17 @@ export async function handleStyle(
   const queue = await resolveQueue(deps);
   const complete = deps.complete ?? defaultComplete;
 
-  if (!isAtOrPast((await loadPaper(db, message.arxiv_id)).status, "styled")) {
+  // Resume guard keyed on the durable intermediate, NOT Paper.status: the stylist
+  // (PL-005) advances status → styled internally, so a crash between that advance
+  // and the draft-Post write below would leave a `styled` paper with no
+  // intermediate — and a status-keyed guard would then skip the stylist forever.
+  // Re-run only when neither the style intermediate (a draft Post) nor a finalized
+  // (published) Post exists yet; the stylist's status advance is itself a no-op
+  // when already past `digested`, so a re-run is safe.
+  const existingPost = (
+    await db.select().from(posts).where(eq(posts.paperId, message.arxiv_id))
+  )[0];
+  if (!existingPost) {
     const styled = await runStylist({ db, complete }, { paperId: message.arxiv_id });
     await upsertDraftPost(db, {
       paperId: message.arxiv_id,
