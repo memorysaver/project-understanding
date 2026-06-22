@@ -890,9 +890,13 @@ stories:
     activity: null
     calibration_type: null
     slice: 1
-    status: in_progress
+    status: completed
+    assigned_to: a5ff2d08009931910
     openspec_change: PL-018
     readiness_score: 0.9
+    completed_at: "2026-06-23T00:14:00Z"
+    pr_url: "https://github.com/memorysaver/project-understanding/pull/15"
+    merge_commit: a925692
     priority: critical
     business_value: 9
     complexity: L
