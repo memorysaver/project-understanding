@@ -1,5 +1,6 @@
 import { protectedProcedure, publicProcedure } from "../index";
 import { getPost, listPosts } from "./posts";
+import { getActivePrompt, updateActivePrompt } from "./prompt";
 import type { RouterClient } from "@orpc/server";
 
 export const appRouter = {
@@ -14,6 +15,8 @@ export const appRouter = {
   }),
   listPosts,
   getPost,
+  getActivePrompt,
+  updateActivePrompt,
 };
 export type AppRouter = typeof appRouter;
 export type AppRouterClient = RouterClient<typeof appRouter>;
