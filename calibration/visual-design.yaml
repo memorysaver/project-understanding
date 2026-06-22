@@ -1,0 +1,121 @@
+# visual-design calibration — PaperLens reader surface
+# Authoritative design reference for all future reader UI work (feed + article).
+# Captured autonomously for the owner under Direction A ("The Periodical").
+
+schema: v1
+project: PaperLens
+calibrated_at: "2026-06-22"
+calibrated_from_layer: 0.5
+
+direction:
+  name: The Periodical
+  description: >-
+    A warm, literary editorial blog — paper-toned background, high-contrast serif
+    display headlines, serif body for long-form reading comfort, and a single
+    burnt-amber accent. Reads as a curated publication, not an aggregator or a
+    generic admin panel. Reading comfort is the product.
+  references:
+    - "Stratechery (warm cream paper, serif throughout, amber accent, hairline rules)"
+    - "The Browser (warm cream, amber accent, friendly editorial)"
+    - "The New Yorker (high-contrast serif masthead + display headlines)"
+    - "Every.to (elegant high-contrast serif wordmark, serif display)"
+
+palette:
+  light:
+    background: "oklch(0.985 0.006 75)"      # warm ivory paper
+    foreground: "oklch(0.255 0.012 60)"      # warm ink (near-black)
+    primary: "oklch(0.62 0.14 55)"           # burnt amber accent
+    primary-foreground: "oklch(0.99 0.005 85)"
+    secondary: "oklch(0.94 0.008 78)"
+    secondary-foreground: "oklch(0.255 0.012 60)"
+    accent: "oklch(0.93 0.025 62)"           # pale amber tint (hover)
+    accent-foreground: "oklch(0.3 0.04 50)"
+    muted: "oklch(0.95 0.007 78)"
+    muted-foreground: "oklch(0.505 0.013 58)" # warm gray — dates / metadata
+    destructive: "oklch(0.58 0.2 27)"
+    border: "oklch(0.9 0.009 72)"            # warm hairline
+    ring: "oklch(0.62 0.14 55)"
+  dark:
+    background: "oklch(0.21 0.008 70)"       # warm charcoal (lamplight, not pure black)
+    foreground: "oklch(0.92 0.008 82)"       # warm off-white
+    primary: "oklch(0.72 0.13 60)"           # brighter amber for dark
+    primary-foreground: "oklch(0.21 0.02 55)"
+    secondary: "oklch(0.29 0.009 68)"
+    secondary-foreground: "oklch(0.92 0.008 82)"
+    accent: "oklch(0.34 0.022 62)"
+    accent-foreground: "oklch(0.92 0.008 82)"
+    muted: "oklch(0.29 0.009 68)"
+    muted-foreground: "oklch(0.7 0.012 75)"
+    destructive: "oklch(0.7 0.19 22)"
+    border: "oklch(0.34 0.008 70)"
+    ring: "oklch(0.72 0.13 60)"
+
+typography:
+  font_family_display: "Fraunces"           # headlines / masthead (variable opsz, literary)
+  font_family_serif: "Newsreader"           # body — designed for on-screen long-form reading
+  font_family_sans: "Inter"                 # UI chrome only: nav, buttons, small labels
+  font_family_mono: "ui-monospace / system mono" # inline code in digests
+  heading_weight: 600
+  body_weight: 400
+  scale_notes: >-
+    Body set in serif (Newsreader) at ~17px / line-height ~1.7 for the article.
+    Headings use Fraunces with tight tracking. Reading measure ~64-66ch on the
+    article column. Use Newsreader italic for emphasis/blockquotes in prose.
+
+spacing:
+  rhythm: "4px"
+  page_padding: "1.5rem"
+  section_gap: "2rem"
+  card_padding: "1.5rem"
+
+layout:
+  max_width: "720px"        # narrow reading column (article); feed index ~ same
+  nav_style: "top"          # minimal top masthead, hairline rule under it
+  default_mode: "light"     # paper-first; real warm dark mode ships too
+
+components:
+  border_radius: "0.375rem" # flatter / print-leaning, less "app-y"
+  button:
+    style_notes: >-
+      Amber primary for the rare call-to-action; otherwise quiet. Sans label
+      (Inter). Small radius. Reader surface uses almost no buttons.
+  card:
+    style_notes: >-
+      Prefer a table-of-contents feel over boxed cards: feed entries separated by
+      warm hairline rules, title in serif, dek + date muted. Card token is near-bg
+      (flat) for where shadcn cards are used.
+  input:
+    style_notes: "Warm hairline border, amber focus ring; sans text. (Console-era.)"
+  feed_item:
+    style_notes: >-
+      Serif title (link), optional one-line dek, muted small-caps/sans date + arXiv
+      venue. No boxes — hairline divider between entries. No search/filter UI (MVP).
+  article_prose:
+    style_notes: >-
+      Tailwind `prose` with serif body, Fraunces headings, amber links (underline
+      in body), italic blockquotes, warm code blocks. Source citation + arXiv link
+      in a hairline-topped footer.
+
+brand:
+  tagline: "The firehose, edited."
+  visual_signals:
+    - "Warm paper background (never pure white) + warm ink"
+    - "High-contrast literary serif display headlines (Fraunces)"
+    - "Serif body for long-form reading (Newsreader)"
+    - "A single burnt-amber accent — links, marks, focus"
+    - "Hairline rules as dividers (table-of-contents / periodical feel)"
+    - "Generous reading measure; flat, print-leaning surfaces"
+
+reference_designs:
+  - page: "feed"
+    file_path: "docs/design-references/ref-stratechery.png"
+    notes: "Warm cream paper, serif index, amber accent, hairline rules — closest to PaperLens feed target."
+  - page: "feed"
+    file_path: "docs/design-references/ref-the-browser.png"
+    notes: "Warm cream + amber accent; friendly editorial tone."
+  - page: "article"
+    file_path: "docs/design-references/ref-newyorker.png"
+    notes: "High-contrast serif masthead + serif display headline; literary article header."
+  - page: "masthead"
+    file_path: "docs/design-references/ref-every-to.png"
+    notes: "Elegant high-contrast serif wordmark — masthead inspiration."

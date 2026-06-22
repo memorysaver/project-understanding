@@ -19,7 +19,14 @@ calibration:
     - layer: 1.5
       dimensions: ["ux-flow", "copy-tone"]
       trigger: "The Curation Console exists and several posts have been published in the owner's voice."
-  history: []
+  history:
+    - dimension: visual-design
+      calibrated_at: "2026-06-22"
+      calibrated_from_layer: 0.5
+      mode: establishment
+      artifact_path: "calibration/visual-design.yaml"
+      sections_updated: []
+      summary: "Direction A 'The Periodical' — warm paper + ink, single burnt-amber accent, Fraunces (display) + Newsreader (body) serif type; palette + fonts written to globals.css. Reader-surface only; Console treated later (1.5)."
 
 # ─── ARCHITECTURE (/map Step 1) ──────────────────────────────
 architecture:
@@ -1622,3 +1629,9 @@ changelog:
       - stories
       - waves
       - layer_gates
+  - date: "2026-06-22"
+    type: calibration
+    author: agent
+    summary: "Calibrated visual-design (Layer 0.5, establishment) for the reader surface. Owner chose Direction A 'The Periodical' and delegated execution; researched editorial references (Stratechery, The Browser, New Yorker, Every.to) via agent-browser screenshots in docs/design-references/. Locked: warm paper + warm ink, a single burnt-amber accent, Fraunces (display) + Newsreader (body) literary serif type, Inter for UI chrome, flatter radius, light-default with a warm dark mode. Wrote calibration/visual-design.yaml (authoritative) and applied the palette + fonts to packages/ui/src/styles/globals.css (replacing the stock shadcn grayscale default; fonts were previously declared but never loaded). Reader is now serif-bodied by default; component-level application to feed/article is the PL-012 build, dispatched later. Console gets its own treatment at Layer 1.5."
+    sections_changed:
+      - calibration
