@@ -801,7 +801,9 @@ stories:
     activity: define-voice
     calibration_type: null
     slice: 2
-    status: pending
+    status: in_progress
+    openspec_change: PL-015
+    readiness_score: 0.9
     priority: critical
     business_value: 9
     complexity: S
