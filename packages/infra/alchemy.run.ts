@@ -12,7 +12,9 @@ import { config } from "dotenv";
 // `@paperlens/env` (env.d.ts imports this file). Keep the two in sync.
 type PipelineMessage =
   | { type: "discover"; runId: string; arxiv_id?: undefined }
-  | { type: "digest" | "style" | "publish"; arxiv_id: string; runId: string };
+  | { type: "digest"; arxiv_id: string; runId: string }
+  | { type: "style"; arxiv_id: string; runId: string }
+  | { type: "publish"; arxiv_id: string; runId: string };
 
 config({ path: "./.env" });
 config({ path: "../../apps/web/.env" });

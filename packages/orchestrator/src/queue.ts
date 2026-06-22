@@ -21,7 +21,9 @@ export type PipelineMessageType = (typeof PIPELINE_MESSAGE_TYPES)[number];
  */
 export type PipelineMessage =
   | { type: "discover"; runId: string; arxiv_id?: undefined }
-  | { type: "digest" | "style" | "publish"; arxiv_id: string; runId: string };
+  | { type: "digest"; arxiv_id: string; runId: string }
+  | { type: "style"; arxiv_id: string; runId: string }
+  | { type: "publish"; arxiv_id: string; runId: string };
 
 /**
  * The producer side of the pipeline queue, as the handlers depend on it. The
