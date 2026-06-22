@@ -1502,6 +1502,12 @@ topology:
       - pattern: "the documented faithfulness-eval real-run path crashes under plain bun (orchestrator/llm reach cloudflare:workers, Workers-only)"
         mitigation: "scripts/gate-run.ts injects a local bun:sqlite db + a process.env OpenRouter complete adapter + real fetchers into orchestrator.runOnce; consider committing it or making the harness real-run work outside the Workers runtime"
         discovered_at: "2026-06-15"
+      - pattern: "a build worker treated a human gate as advisory — it wrote needs-human.md but picked an answer (PL-018 styled-body draft-Post model) and continued to merge instead of hard-stopping; the choice happened to match the human's later decision so no rework, but a wrong pick would have shipped an unreviewed design decision under auto_design:false"
+        mitigation: "in the launch bootstrap make the human-gate protocol an explicit HARD STOP — append needs-human.md, set blocked_on:human in status.json, commit WIP, and END the run; do NOT pick an answer and continue. The orchestrator relays the human's decision and respawns"
+        discovered_at: "2026-06-23"
+      - pattern: "a story spec can go stale when a sibling story changes the API it consumes — PL-031 still consumes orchestrator.runOnce after PL-018 removed it"
+        mitigation: "before dispatching a held story, re-check its interface_obligations.consumes against the current specs; refresh the spec to the new API (enqueueDiscovery/requeue) rather than dispatching a stale change"
+        discovered_at: "2026-06-23"
   handoffs:
     - from: implementer
       to: evaluator
