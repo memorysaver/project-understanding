@@ -1,5 +1,5 @@
 import type { Context as HonoContext } from "hono";
-import { createAuth } from "@paperlens/auth";
+import { getSession } from "@paperlens/auth";
 import { createDb } from "@paperlens/db";
 import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
 import type * as schema from "@paperlens/db/schema/paperlens";
@@ -14,9 +14,7 @@ export type CreateContextOptions = {
 };
 
 export async function createContext({ context }: CreateContextOptions) {
-  const session = await createAuth().api.getSession({
-    headers: context.req.raw.headers,
-  });
+  const session = await getSession(context.req.raw.headers);
   return {
     auth: null,
     session,

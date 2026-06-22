@@ -41,3 +41,12 @@ export function createAuth() {
     },
   });
 }
+
+// Resolve the owner session for an incoming request (or null). A thin helper over
+// the Better Auth instance so the oRPC context has one place to read the session
+// from. Does not touch the auth schema/tables.
+export async function getSession(headers: Headers) {
+  return createAuth().api.getSession({ headers });
+}
+
+export type Session = Awaited<ReturnType<typeof getSession>>;

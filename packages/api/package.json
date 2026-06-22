@@ -9,7 +9,9 @@
       "default": "./src/*.ts"
     }
   },
-  "scripts": {},
+  "scripts": {
+    "test": "bun test"
+  },
   "dependencies": {
     "@orpc/client": "catalog:",
     "@orpc/openapi": "catalog:",
@@ -23,6 +25,7 @@
   },
   "devDependencies": {
     "@paperlens/config": "workspace:*",
+    "@types/bun": "^1.3.14",
     "hono": "catalog:",
     "typescript": "catalog:"
   }
