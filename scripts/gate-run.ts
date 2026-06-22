@@ -5,7 +5,7 @@
 // getLlmConfig() both reach `cloudflare:workers` (Workers-only). This runner
 // bypasses that entirely: it injects a file-backed bun:sqlite db, a
 // reasoning-aware OpenRouter `complete` adapter (config from apps/server/.env),
-// and the real arXiv fetchers into `orchestrator.runOnce`, then assembles
+// and the real arXiv fetchers into `orchestrator.runPipelineOnce`, then assembles
 // faithfulness bundles via the exact harness format the `score` step expects.
 //
 // Usage:
@@ -24,14 +24,10 @@ import { drizzle } from "drizzle-orm/bun-sqlite";
 
 import * as schema from "@paperlens/db/schema/index";
 import { seedDefaultStylePrompt } from "@paperlens/db/seed";
-import { runOnce, type RunOnceDeps } from "@paperlens/orchestrator";
+import { runPipelineOnce, type PipelineDeps } from "@paperlens/orchestrator";
 import { fetchArxivFullText } from "@paperlens/digestor";
 import { digestSchema } from "@paperlens/digestor";
-import {
-  renderBundleMarkdown,
-  renderGradesTemplate,
-  type PaperBundle,
-} from "./faithfulness-eval";
+import { renderBundleMarkdown, renderGradesTemplate, type PaperBundle } from "./faithfulness-eval";
 
 // ---------------------------------------------------------------------------
 // Config (apps/server/.env — gitignored; never import @paperlens/env/server)
@@ -53,11 +49,31 @@ const MODELS: Record<"digest" | "style", string> = {
 };
 
 const GATE_IDS = [
-  "1706.03762", "1810.04805", "2005.14165", "1512.03385", "1406.2661",
-  "1412.6980", "2010.11929", "2203.02155", "1907.11692", "1409.1556",
-  "1502.03167", "2201.11903", "1301.3781", "2302.13971", "1503.02531",
-  "2006.11239", "1505.04597", "2104.08691", "1602.04938", "2005.11401",
-  "1707.06347", "1312.5602", "2106.09685", "1411.1784", "1409.0473",
+  "1706.03762",
+  "1810.04805",
+  "2005.14165",
+  "1512.03385",
+  "1406.2661",
+  "1412.6980",
+  "2010.11929",
+  "2203.02155",
+  "1907.11692",
+  "1409.1556",
+  "1502.03167",
+  "2201.11903",
+  "1301.3781",
+  "2302.13971",
+  "1503.02531",
+  "2006.11239",
+  "1505.04597",
+  "2104.08691",
+  "1602.04938",
+  "2005.11401",
+  "1707.06347",
+  "1312.5602",
+  "2106.09685",
+  "1411.1784",
+  "1409.0473",
 ];
 const SMOKE_ID = "1706.03762";
 
@@ -178,9 +194,7 @@ const completeAdapter = (async (args: {
   if (args.schema) {
     // DIGEST: structured. Inject JSON instruction into the system message.
     const messages = args.messages.map((m, i) =>
-      i === 0 && m.role === "system"
-        ? { ...m, content: m.content + JSON_INSTRUCTION }
-        : m,
+      i === 0 && m.role === "system" ? { ...m, content: m.content + JSON_INSTRUCTION } : m,
     );
     // If there was no system message, prepend the instruction defensively.
     if (!messages.some((m) => m.role === "system")) {
@@ -228,7 +242,7 @@ const completeAdapter = (async (args: {
     console.warn(`  [style] empty content at max_tokens=${maxTokens}, retrying...`);
   }
   throw new Error("style: model returned empty content after retries");
-}) as unknown as NonNullable<RunOnceDeps["complete"]>;
+}) as unknown as NonNullable<PipelineDeps["complete"]>;
 
 function toLlmUsage(usage: any) {
   return {
@@ -247,9 +261,8 @@ async function makeDb() {
   sqlite.run("PRAGMA foreign_keys = ON");
 
   const hasPapers =
-    sqlite
-      .query("SELECT name FROM sqlite_master WHERE type='table' AND name='papers'")
-      .get() !== null;
+    sqlite.query("SELECT name FROM sqlite_master WHERE type='table' AND name='papers'").get() !==
+    null;
   if (!hasPapers) {
     const migration = await Bun.file(MIGRATION_URL).text();
     for (const statement of migration.split("--> statement-breakpoint")) {
@@ -258,7 +271,7 @@ async function makeDb() {
     }
   }
 
-  const db = drizzle(sqlite, { schema }) as unknown as NonNullable<RunOnceDeps["db"]>;
+  const db = drizzle(sqlite, { schema }) as unknown as NonNullable<PipelineDeps["db"]>;
 
   // Seed exactly one active default StylePrompt if none is active (idempotent).
   const active = await db
@@ -286,12 +299,12 @@ const fetchFullTextForGate: typeof fetchArxivFullText = forceAbstractOnly
   : fetchArxivFullText;
 
 async function runPaper(
-  db: NonNullable<RunOnceDeps["db"]>,
+  db: NonNullable<PipelineDeps["db"]>,
   arxivId: string,
 ): Promise<PaperBundle> {
   // Real arXiv metadata fetcher (crawler default) + real full-text fetcher
   // (digestor default) + reasoning-aware OpenRouter complete + file-backed db.
-  const post = await runOnce(arxivId, {
+  const post = await runPipelineOnce(arxivId, {
     db,
     complete: completeAdapter,
     fetchFullText: fetchFullTextForGate,
@@ -333,8 +346,8 @@ async function smoke() {
   const db = await makeDb();
   const bundle = await runPaper(db, SMOKE_ID);
 
-  // Assert a published Post is produced (runPaper throws otherwise; runOnce
-  // only returns a published PublishedPost).
+  // Assert a published Post is produced (runPaper throws otherwise;
+  // runPipelineOnce only returns a published PublishedPost).
   console.log("--- STRUCTURED DIGEST ---");
   console.log("Contributions:");
   bundle.digest.contributions.forEach((c) => console.log(`  - ${c}`));

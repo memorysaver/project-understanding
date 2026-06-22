@@ -23,7 +23,7 @@ import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 // Type-only — erased at runtime, so it never pulls the orchestrator value graph
 // (which imports `cloudflare:workers`) into the offline test path.
-import type { RunOnceDeps } from "@paperlens/orchestrator";
+import type { PipelineDeps } from "@paperlens/orchestrator";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -54,7 +54,7 @@ export type PaperBundle = {
 
 /**
  * Runs the pipeline for one arXiv id and returns its bundle. The default
- * implementation wires `orchestrator.runOnce`; tests inject a fake so the
+ * implementation wires `orchestrator.runPipelineOnce`; tests inject a fake so the
  * harness runs entirely offline (no network, no real db, no llm).
  */
 export type RunPaper = (arxivId: string) => Promise<PaperBundle>;
@@ -234,7 +234,7 @@ export const defaultRunPaper: RunPaper = async (arxivId) => {
   const { drizzle } = await import("drizzle-orm/bun-sqlite");
   const { eq } = await import("drizzle-orm");
   const schema = await import("@paperlens/db/schema/index");
-  const { runOnce } = await import("@paperlens/orchestrator");
+  const { runPipelineOnce } = await import("@paperlens/orchestrator");
   const { fetchArxivFullText } = await import("@paperlens/digestor");
 
   const sqlite = new Database(":memory:");
@@ -248,11 +248,11 @@ export const defaultRunPaper: RunPaper = async (arxivId) => {
     const trimmed = statement.trim();
     if (trimmed) sqlite.run(trimmed);
   }
-  // runOnce's injectable db is typed against the crawler's narrower Db shape;
-  // the bun-sqlite drizzle instance is structurally compatible at runtime.
-  const db = drizzle(sqlite, { schema }) as unknown as NonNullable<RunOnceDeps["db"]>;
+  // runPipelineOnce's injectable db is typed against the crawler's narrower Db
+  // shape; the bun-sqlite drizzle instance is structurally compatible at runtime.
+  const db = drizzle(sqlite, { schema }) as unknown as NonNullable<PipelineDeps["db"]>;
 
-  const post = await runOnce(arxivId, { db });
+  const post = await runPipelineOnce(arxivId, { db });
 
   const paper = (
     await db.select().from(schema.papers).where(eq(schema.papers.arxivId, arxivId))
