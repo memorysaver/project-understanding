@@ -395,3 +395,54 @@ async function markFailed(
     `orchestrator: ${message.type} for ${target} failed after max retries: ${failedReason}`,
   );
 }
+
+// --- Single-paper synchronous driver (offline eval / smoke) ------------------
+
+/** A finalized, published Post row, as `runPipelineOnce` returns. */
+export type PublishedPost = typeof posts.$inferSelect;
+
+/**
+ * Drive ONE arXiv id through the full pipeline synchronously in-process and
+ * return its published Post. This is NOT the production path (the pipeline runs
+ * over the queue, one message per invocation) — it is the offline equivalent for
+ * the faithfulness eval / smoke runs (PL-011/PL-030): it threads the *same* stage
+ * handlers (digest → style → publish) for a single paper through a local in-memory
+ * queue, so it exercises the real transitions/intermediates without a Worker or a
+ * real Queue. The discover fan-out is bypassed (it enumerates a fixed seed); the
+ * caller supplies the single arxiv id directly.
+ */
+export async function runPipelineOnce(
+  arxivId: string,
+  deps: PipelineDeps = {},
+): Promise<PublishedPost> {
+  const db = await resolveDb(deps);
+
+  // Local in-memory queue: stages enqueue their next message here; we drain it
+  // synchronously so the whole pipeline runs in this one call.
+  const pending: PipelineMessage[] = [];
+  const localQueue: QueueProducer = { send: async (m) => void pending.push(m) };
+  const driveDeps: PipelineDeps = { ...deps, db, queue: localQueue };
+
+  await ensureActiveStylePrompt(db);
+  await fetchById({ id: arxivId, db, fetcher: deps.fetcher });
+
+  // Kick off at the digest stage for this single paper, then drain. attempt (1)
+  // never exceeds maxRetries (1), so a stage error rethrows out of this call (the
+  // eval records the id as failed) rather than being swallowed as a queue retry.
+  pending.push({ type: "digest", arxiv_id: arxivId, runId: "eval" });
+  while (pending.length > 0) {
+    const message = pending.shift()!;
+    await dispatch(message, driveDeps, { attempt: 1, maxRetries: 1 });
+  }
+
+  const post = (
+    await db
+      .select()
+      .from(posts)
+      .where(and(eq(posts.paperId, arxivId), eq(posts.status, "published")))
+  )[0];
+  if (!post) {
+    throw new Error(`runPipelineOnce: pipeline produced no published Post for ${arxivId}`);
+  }
+  return post;
+}
