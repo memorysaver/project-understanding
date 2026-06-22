@@ -765,8 +765,13 @@ stories:
     activity: define-voice
     calibration_type: null
     slice: 1
-    status: in_progress
+    status: completed
+    assigned_to: af5aa5b6bf9723b4a
+    openspec_change: PL-014
     readiness_score: 0.7
+    completed_at: "2026-06-22T15:24:49Z"
+    pr_url: "https://github.com/memorysaver/project-understanding/pull/14"
+    merge_commit: 004577f
     priority: critical
     business_value: 7
     complexity: M
