@@ -97,6 +97,11 @@ export interface DiscoverArgs {
  * Paper(status=discovered). Queries the arXiv list endpoint, parses every entry,
  * and inserts each with `ON CONFLICT DO NOTHING` on arxiv_id — the same dedup
  * mechanism `fetchById` uses, so a paper already stored is never duplicated.
+ *
+ * Returns only the papers newly persisted on this run ("new" = not present in
+ * `papers` before the run): a paper already stored (from a prior run or a prior
+ * `fetchById`) is left unchanged and is NOT returned, so the orchestrator fans
+ * out over genuinely new work. Re-running over the same batch returns [].
  */
 export async function discover(args: DiscoverArgs): Promise<Paper[]> {
   const { db } = args;
@@ -107,6 +112,14 @@ export async function discover(args: DiscoverArgs): Promise<Paper[]> {
   const xml = await fetchArxivBatch(query, maxResults, fetcher);
   const batch = parseArxivBatch(xml);
   if (batch.length === 0) return [];
+
+  // Which ids already exist BEFORE this run — those are not "new".
+  const ids = batch.map((m) => m.arxivId);
+  const existingRows = await db
+    .select({ arxivId: papers.arxivId })
+    .from(papers)
+    .where(inArray(papers.arxivId, ids));
+  const existing = new Set(existingRows.map((r) => r.arxivId));
 
   await db
     .insert(papers)
@@ -123,6 +136,7 @@ export async function discover(args: DiscoverArgs): Promise<Paper[]> {
     )
     .onConflictDoNothing();
 
-  const ids = batch.map((m) => m.arxivId);
-  return db.select().from(papers).where(inArray(papers.arxivId, ids));
+  const newIds = ids.filter((id) => !existing.has(id));
+  if (newIds.length === 0) return [];
+  return db.select().from(papers).where(inArray(papers.arxivId, newIds));
 }
