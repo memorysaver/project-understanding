@@ -8,17 +8,24 @@
 
 import type { CrawlerDb, FetchLike } from "./types";
 import { papers } from "@paperlens/db/schema/paperlens";
-import { eq } from "drizzle-orm";
-import { fetchArxivMetadata } from "./arxiv";
+import { eq, inArray } from "drizzle-orm";
+import { fetchArxivBatch, fetchArxivMetadata, parseArxivBatch } from "./arxiv";
 
 export {
   ArxivError,
   parseArxivAtom,
+  parseArxivBatch,
   fetchArxivMetadata,
+  fetchArxivBatch,
   USER_AGENT,
   ARXIV_MIN_INTERVAL_MS,
 } from "./arxiv";
 export type { ArxivMetadata, CrawlerDb, FetchLike } from "./types";
+
+/** Default arXiv search feed for MVP discovery (cs.CL recent submissions). */
+const DEFAULT_QUERY = "cat:cs.CL";
+/** Default batch size for a discovery run (one list-endpoint page). */
+const DEFAULT_MAX_RESULTS = 25;
 
 export interface FetchByIdArgs {
   /** The arXiv id to discover, e.g. "2401.00001". */
@@ -69,4 +76,53 @@ export async function fetchById(args: FetchByIdArgs): Promise<Paper> {
     throw new Error(`Paper "${id}" was not persisted`);
   }
   return paper;
+}
+
+export interface DiscoverArgs {
+  /** PaperLens database (D1 in prod, in-memory SQLite in tests). */
+  db: CrawlerDb;
+  /**
+   * HTTP fetcher used to reach the arXiv API. Defaults to the global `fetch`;
+   * tests inject a fixture-backed fetcher so no real request is made.
+   */
+  fetcher?: FetchLike;
+  /** Max papers to request in the batch (one list-endpoint page). */
+  maxResults?: number;
+  /** arXiv search query selecting the feed. Defaults to the MVP category feed. */
+  query?: string;
+}
+
+/**
+ * Discover a batch of recent arXiv papers and persist each as a
+ * Paper(status=discovered). Queries the arXiv list endpoint, parses every entry,
+ * and inserts each with `ON CONFLICT DO NOTHING` on arxiv_id — the same dedup
+ * mechanism `fetchById` uses, so a paper already stored is never duplicated.
+ */
+export async function discover(args: DiscoverArgs): Promise<Paper[]> {
+  const { db } = args;
+  const fetcher = args.fetcher ?? (globalThis.fetch as unknown as FetchLike);
+  const query = args.query ?? DEFAULT_QUERY;
+  const maxResults = args.maxResults ?? DEFAULT_MAX_RESULTS;
+
+  const xml = await fetchArxivBatch(query, maxResults, fetcher);
+  const batch = parseArxivBatch(xml);
+  if (batch.length === 0) return [];
+
+  await db
+    .insert(papers)
+    .values(
+      batch.map((metadata) => ({
+        arxivId: metadata.arxivId,
+        title: metadata.title,
+        authors: metadata.authors,
+        abstract: metadata.abstract,
+        sourceUrl: metadata.sourceUrl,
+        fullTextUrl: metadata.fullTextUrl,
+        pdfUrl: metadata.pdfUrl,
+      })),
+    )
+    .onConflictDoNothing();
+
+  const ids = batch.map((m) => m.arxivId);
+  return db.select().from(papers).where(inArray(papers.arxivId, ids));
 }
