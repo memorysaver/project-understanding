@@ -1340,7 +1340,7 @@ stories:
       - "A paper that was abstract-only and later gains full text is re-digested from the full text before/at publish."
     interface_obligations:
       implements: []
-      consumes: ["digestor.run", "orchestrator.runOnce"]
+      consumes: ["digestor.run", "orchestrator.handleDigest", "orchestrator.dispatch", "orchestrator.enqueueDiscovery"]
       contract_tests_required: false
     files_affected:
       [
@@ -1348,7 +1348,7 @@ stories:
         "packages/orchestrator/src/index.ts",
         "packages/db/src/schema/paperlens.ts",
       ]
-    technical_notes: "Carries the deferred half of PL-030 (source_kind persistence + orchestrator deferral). source_kind threads digestor -> digest row. Deferral policy: requeue abstract-only papers with a backoff until fetchArxivFullText returns more than the abstract."
+    technical_notes: "Carries the deferred half of PL-030 (source_kind persistence + orchestrator deferral). source_kind threads digestor -> digest row. Deferral policy: requeue abstract-only papers with a backoff until fetchArxivFullText returns more than the abstract. SPEC REFRESHED 2026-06-25: orchestrator.runOnce was REMOVED by PL-018 — the defer/flag + requeue now hooks the current pipeline entry points (handleDigest threads source_kind; dispatch/enqueueDiscovery re-queue abstract-only papers with backoff). No orchestrator.runOnce."
     verification:
       unit: ["digest records source_kind", "orchestrator defers/flags abstract-only paper"]
       integration: ["abstract-only paper is not published as a normal post"]
