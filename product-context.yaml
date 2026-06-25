@@ -1321,13 +1321,13 @@ stories:
     activity: ingest-digest
     calibration_type: null
     slice: null
-    status: pending
+    status: completed
     assigned_to: null
-    openspec_change: null
+    openspec_change: PL-031
     dispatched_at_epoch: null
-    completed_at: null
-    pr_url: null
-    merge_commit: null
+    completed_at: "2026-06-25T14:23:15Z"
+    pr_url: "https://github.com/memorysaver/project-understanding/pull/21"
+    merge_commit: 9a2ec8f
     priority: high
     business_value: 9
     complexity: M
