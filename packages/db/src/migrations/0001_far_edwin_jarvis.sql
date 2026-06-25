@@ -1,0 +1,1 @@
+ALTER TABLE `digests` ADD `source_kind` text DEFAULT 'full_text' NOT NULL;

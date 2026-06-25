@@ -26,14 +26,16 @@ import {
 async function makeDb(): Promise<BunSQLiteDatabase<typeof schema>> {
   const sqlite = new Database(":memory:");
   sqlite.run("PRAGMA foreign_keys = ON");
-  const migrationUrl = new URL(
-    "../migrations/0000_keen_supernaut.sql",
-    import.meta.resolve("@paperlens/db/schema/index"),
-  );
-  const migration = await Bun.file(migrationUrl).text();
-  for (const statement of migration.split("--> statement-breakpoint")) {
-    const trimmed = statement.trim();
-    if (trimmed) sqlite.run(trimmed);
+  for (const file of ["0000_keen_supernaut.sql", "0001_far_edwin_jarvis.sql"]) {
+    const migrationUrl = new URL(
+      `../migrations/${file}`,
+      import.meta.resolve("@paperlens/db/schema/index"),
+    );
+    const migration = await Bun.file(migrationUrl).text();
+    for (const statement of migration.split("--> statement-breakpoint")) {
+      const trimmed = statement.trim();
+      if (trimmed) sqlite.run(trimmed);
+    }
   }
   return drizzle(sqlite, { schema });
 }
