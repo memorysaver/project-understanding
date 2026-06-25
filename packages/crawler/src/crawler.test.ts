@@ -2,10 +2,19 @@
 import { describe, expect, mock, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle, type BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
+import { eq } from "drizzle-orm";
 import * as schema from "@paperlens/db/schema/index";
-import { fetchById } from "./index";
-import { parseArxivAtom, USER_AGENT } from "./arxiv";
-import { ARXIV_ATOM_FIXTURE, ARXIV_EMPTY_FIXTURE, FIXTURE_ID } from "./fixtures";
+import { discover, fetchById } from "./index";
+import { parseArxivAtom, parseArxivBatch, USER_AGENT } from "./arxiv";
+import {
+  ARXIV_ATOM_FIXTURE,
+  ARXIV_BATCH_FIXTURE,
+  ARXIV_BATCH_MALFORMED_FIXTURE,
+  ARXIV_BATCH_OVERLAP_FIXTURE,
+  ARXIV_EMPTY_FIXTURE,
+  BATCH_IDS,
+  FIXTURE_ID,
+} from "./fixtures";
 import type { FetchLike } from "./types";
 
 // Build an in-memory SQLite db with the @paperlens/db D1 migration applied — the
@@ -155,5 +164,116 @@ describe("fetchById error handling", () => {
     } finally {
       globalThis.fetch = original;
     }
+  });
+});
+
+// --- Unit: multi-entry batch parser (Task 1.2) -----------------------------
+
+describe("parseArxivBatch", () => {
+  test("maps every entry, deriving the id from each entry's own <id>", () => {
+    const batch = parseArxivBatch(ARXIV_BATCH_FIXTURE);
+
+    expect(batch.map((m) => m.arxivId)).toEqual([...BATCH_IDS]);
+    // First entry: whitespace collapsed, multiple authors, derived URLs.
+    expect(batch[0]!.title).toBe("Sparse Mixtures for Efficient Long-Context Models");
+    expect(batch[0]!.authors).toEqual(["Grace Hopper", "Katherine Johnson"]);
+    expect(batch[0]!.fullTextUrl).toBe("https://arxiv.org/html/2401.00010");
+    // Second entry: version suffix (v2) stripped, `&amp;` decoded.
+    expect(batch[1]!.arxivId).toBe("2401.00011");
+    expect(batch[1]!.title).toBe("Retrieval & Reasoning at Scale");
+    expect(batch[1]!.sourceUrl).toBe("https://arxiv.org/abs/2401.00011");
+  });
+
+  test("skips a malformed entry rather than failing the whole batch", () => {
+    const batch = parseArxivBatch(ARXIV_BATCH_MALFORMED_FIXTURE);
+
+    // The middle entry (no summary/authors) is skipped; the two good ones remain.
+    expect(batch.map((m) => m.arxivId)).toEqual(["2401.00010", "2401.00012"]);
+  });
+
+  test("an empty feed yields an empty array", () => {
+    expect(parseArxivBatch(ARXIV_EMPTY_FIXTURE)).toEqual([]);
+  });
+});
+
+// --- Integration: discover persists only new papers (AC: persist-only-new) --
+
+describe("discover persists only new papers", () => {
+  test("a discovery run persists the batch as discovered Papers and returns them", async () => {
+    const db = await makeDb();
+    const { fetcher } = fixtureFetcher(ARXIV_BATCH_FIXTURE);
+
+    const created = await discover({ db, fetcher });
+
+    expect(created.map((p) => p.arxivId).sort()).toEqual([...BATCH_IDS].sort());
+    for (const paper of created) expect(paper.status).toBe("discovered");
+
+    const rows = await db.select().from(schema.papers);
+    expect(rows).toHaveLength(BATCH_IDS.length);
+  });
+
+  test("only not-yet-seen papers are persisted/returned; overlapping ones are unchanged", async () => {
+    const db = await makeDb();
+
+    // Seed the overlapping paper via fetchById (a prior run).
+    const seeded = await fetchById({
+      id: FIXTURE_ID,
+      db,
+      fetcher: fixtureFetcher(ARXIV_ATOM_FIXTURE).fetcher,
+    });
+
+    // The overlap batch contains FIXTURE_ID (already stored) + two new ids.
+    const { fetcher } = fixtureFetcher(ARXIV_BATCH_OVERLAP_FIXTURE);
+    const created = await discover({ db, fetcher });
+
+    // Return value is exactly the two NEW ids — the overlap is excluded.
+    expect(created.map((p) => p.arxivId).sort()).toEqual(["2401.00011", "2401.00012"]);
+
+    // The already-stored paper was left unchanged (title not overwritten by the
+    // batch feed's shorter summary/title), and exists exactly once.
+    const overlapRows = await db
+      .select()
+      .from(schema.papers)
+      .where(eq(schema.papers.arxivId, FIXTURE_ID));
+    expect(overlapRows).toHaveLength(1);
+    expect(overlapRows[0]!.title).toBe(seeded.title);
+    expect(overlapRows[0]!.discoveredAt.getTime()).toBe(seeded.discoveredAt.getTime());
+
+    // Total = 1 seeded + 2 new.
+    expect(await db.select().from(schema.papers)).toHaveLength(3);
+  });
+
+  test("re-running discovery produces no duplicates and the 2nd run returns []", async () => {
+    const db = await makeDb();
+
+    const first = await discover({ db, fetcher: fixtureFetcher(ARXIV_BATCH_FIXTURE).fetcher });
+    const second = await discover({ db, fetcher: fixtureFetcher(ARXIV_BATCH_FIXTURE).fetcher });
+
+    expect(first).toHaveLength(BATCH_IDS.length);
+    expect(second).toHaveLength(0);
+
+    // Each paper stored exactly once (dedup by arxiv_id).
+    const rows = await db.select().from(schema.papers);
+    expect(rows).toHaveLength(BATCH_IDS.length);
+  });
+});
+
+// --- arXiv etiquette: User-Agent + single request (AC: rate limit + UA) -----
+
+describe("discover honors arXiv etiquette", () => {
+  test("the discovery request goes to the list endpoint with the custom User-Agent", async () => {
+    const db = await makeDb();
+    const { fetcher, calls } = fixtureFetcher(ARXIV_BATCH_FIXTURE);
+
+    await discover({ db, fetcher, query: "cat:cs.CL", maxResults: 25 });
+
+    // Exactly one request per single-page run.
+    expect(calls).toHaveLength(1);
+    // List endpoint params, not id_list.
+    expect(calls[0]!.url).toContain("search_query=cat%3Acs.CL");
+    expect(calls[0]!.url).toContain("sortBy=submittedDate");
+    expect(calls[0]!.url).toContain("max_results=25");
+    // arXiv etiquette: the custom User-Agent is sent.
+    expect(calls[0]!.headers?.["User-Agent"]).toBe(USER_AGENT);
   });
 });
