@@ -11,7 +11,7 @@
       "source": "memorysaver/agentic-engineering-patterns",
       "sourceType": "github",
       "skillPath": "skills/agentic-development-workflow/build/SKILL.md",
-      "computedHash": "139d03b1f71566f44f9fb111a6d4197a8f50d624d9f9a3c7f4c35e74b035ece1"
+      "computedHash": "462299bfaa56e1e0ed0d9e08eaaf0744fce89220e69edb599695e0239ddd3dae"
     },
     "aep-calibrate": {
       "source": "memorysaver/agentic-engineering-patterns",
@@ -29,25 +29,31 @@
       "source": "memorysaver/agentic-engineering-patterns",
       "sourceType": "github",
       "skillPath": "skills/product-context/dispatch/SKILL.md",
-      "computedHash": "ca12960438b2768d200b42ef0d923ba0a9254287a95f5793750b3df6be276dd8"
+      "computedHash": "bd7a2cdf59e2f51b0a40d041ff045093300f3e2166150d4d03ebeb2b4e0e2acd"
+    },
+    "aep-e2e-skill-scaffolding": {
+      "source": "memorysaver/agentic-engineering-patterns",
+      "sourceType": "github",
+      "skillPath": "skills/project-setup/e2e-skill-scaffolding/SKILL.md",
+      "computedHash": "c0e7ee9bb940edd687a0d2f6d69cf43e700e60da56f48526416198ae766b8792"
     },
     "aep-envision": {
       "source": "memorysaver/agentic-engineering-patterns",
       "sourceType": "github",
       "skillPath": "skills/product-context/envision/SKILL.md",
-      "computedHash": "7f45ef61c2018cc2391c2bd055dc7ef0543b573d093c79111334aaae29933862"
+      "computedHash": "0f20249d3f4b4397bba62f3208ab16092605f3b64165edb0bbdecf1f00d1a449"
     },
     "aep-executor": {
       "source": "memorysaver/agentic-engineering-patterns",
       "sourceType": "github",
       "skillPath": "skills/patterns/executor/SKILL.md",
-      "computedHash": "411ebb49a98e779b28da66ebc5191b0ec34ece3fc67166a90c146a6d4fb1aa89"
+      "computedHash": "fc49d539e83a3db298ac29649043dfeeace9517867f85c2131b4afed4aea5016"
     },
     "aep-gen-eval": {
       "source": "memorysaver/agentic-engineering-patterns",
       "sourceType": "github",
       "skillPath": "skills/patterns/gen-eval/SKILL.md",
-      "computedHash": "1c2d44f505c74820752a423d7c93c330c99ecddabf77afeaf3c2425722e36d04"
+      "computedHash": "fe13d7bd455e70e0f113d5477831a67cce9aa3d344e332f2d21e97877b7c1eae"
     },
     "aep-git-ref": {
       "source": "memorysaver/agentic-engineering-patterns",
@@ -59,13 +65,19 @@
       "source": "memorysaver/agentic-engineering-patterns",
       "sourceType": "github",
       "skillPath": "skills/agentic-development-workflow/launch/SKILL.md",
-      "computedHash": "d618ea56bbed7b5970aaf978cee64cc650015691033d80b7dc07d3a2db204091"
+      "computedHash": "2e103258b09ef700a92ff8fa59bb7af128fb5df7410121df959686ca31b1e499"
     },
     "aep-map": {
       "source": "memorysaver/agentic-engineering-patterns",
       "sourceType": "github",
       "skillPath": "skills/product-context/map/SKILL.md",
-      "computedHash": "a420df2259a06d9039c5a9027d94b926bed7daff89d4b69856f86e8bb6376f1f"
+      "computedHash": "cc4292e058d35e9d9d16d6b815e18e88aaa084f1613d9b21388fdb47c938e508"
+    },
+    "aep-model": {
+      "source": "memorysaver/agentic-engineering-patterns",
+      "sourceType": "github",
+      "skillPath": "skills/product-context/model/SKILL.md",
+      "computedHash": "9b2c7fd7aa886b9b66954254fe53e63b999140192fa738c7e4b87a0b1b19ccc3"
     },
     "aep-onboard": {
       "source": "memorysaver/agentic-engineering-patterns",
@@ -77,13 +89,13 @@
       "source": "memorysaver/agentic-engineering-patterns",
       "sourceType": "github",
       "skillPath": "skills/product-context/reflect/SKILL.md",
-      "computedHash": "e1ea29913b8a997a919d616632247fbddf53f36bb08e14982c363b21f2f933f5"
+      "computedHash": "efa500f578ba5401a96223b00608137b089b0892a2ba055f5354f5af74c21648"
     },
     "aep-scaffold": {
       "source": "memorysaver/agentic-engineering-patterns",
       "sourceType": "github",
       "skillPath": "skills/project-setup/scaffold/SKILL.md",
-      "computedHash": "38fc69fde57483fb97c08f088ca38f548c07235b88fbaf9e90b573d5b94c5bbb"
+      "computedHash": "3fd159861aaec217ec3a238ce4678db0843ee80371cc011e998a570a0ed8105c"
     },
     "aep-testing-guide": {
       "source": "memorysaver/agentic-engineering-patterns",
@@ -95,25 +107,31 @@
       "source": "memorysaver/agentic-engineering-patterns",
       "sourceType": "github",
       "skillPath": "skills/product-context/validate/SKILL.md",
-      "computedHash": "a44aea1b57787b93477ac7b762452c52a7fd6f7953efd0f6c579918151408645"
+      "computedHash": "73e75bcdbb7757ef9c3e4a83cfeffabae9c16bd67fb9dbed8562cda9014174ca"
     },
     "aep-watch": {
       "source": "memorysaver/agentic-engineering-patterns",
       "sourceType": "github",
       "skillPath": "skills/product-context/watch/SKILL.md",
-      "computedHash": "e61046564efbe24a3f7b70070b3461a555cd1adb78b5e621faff6f985264ca09"
+      "computedHash": "4638be552b3fb4b2f8701fb6bbf60c64cd644e559a136dbb795481ebcd886bf9"
+    },
+    "aep-workflow": {
+      "source": "memorysaver/agentic-engineering-patterns",
+      "sourceType": "github",
+      "skillPath": "skills/patterns/workflow/SKILL.md",
+      "computedHash": "e082dd3e2092ef5397f147a3933eb175b07625f0378fdcdbe9b9f0e517f85f6b"
     },
     "aep-workflow-feedback": {
       "source": "memorysaver/agentic-engineering-patterns",
       "sourceType": "github",
       "skillPath": "skills/patterns/workflow-feedback/SKILL.md",
-      "computedHash": "5acdcb6a6f0f1169210c395cc4ee9b2e1b9ea772f1f17711b79993de84d98040"
+      "computedHash": "c6b8918c318fdc51662d6ade1a01a6f964a234aea3017c9f6ed9593b13c4ecd2"
     },
     "aep-wrap": {
       "source": "memorysaver/agentic-engineering-patterns",
       "sourceType": "github",
       "skillPath": "skills/agentic-development-workflow/wrap/SKILL.md",
-      "computedHash": "8dde69183947f546e24f692141090ca954ea5a4805a1959bf31590b1c116c4f0"
+      "computedHash": "72b789b6f3960f539ec9e44b232c4bc8fe6dd5400a25022f737734606fb710da"
     },
     "better-auth-best-practices": {
       "source": "better-auth/skills",
