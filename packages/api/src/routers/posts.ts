@@ -1,8 +1,8 @@
 import { ORPCError } from "@orpc/server";
 import { z } from "zod";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { posts } from "@paperlens/db/schema/paperlens";
-import { publicProcedure } from "../index";
+import { protectedProcedure, publicProcedure } from "../index";
 
 // Public reader API (PL-008). These procedures expose ONLY published posts and
 // must never leak draft/unpublished rows, so every query is constrained to
@@ -62,4 +62,50 @@ export const getPost = publicProcedure
     }
 
     return post;
+  });
+
+// Console (auth-gated) post curation (PL-021). The owner toggles a post between
+// `published` and `unpublished` (and may edit its body) — the safety net for a
+// bad post. Composes on protectedProcedure (PL-014): an unauthenticated call is
+// rejected with 401 before the handler runs, so no post is read or mutated.
+//
+// Moving to `unpublished` removes the post from the public feed; moving back to
+// `published` restores it — the reader feed (PL-008) already filters on
+// status = "published", so the status flip alone satisfies that requirement.
+// The console may not set `draft` (owned by the pipeline) — the input enum
+// accepts only published/unpublished.
+//
+// body is `.optional()` (not `.default(...)`) per the Zod v4 quirk; when absent
+// it is simply omitted from the update.
+export const setPostStatus = protectedProcedure
+  .input(
+    z.object({
+      id: z.string().min(1),
+      status: z.enum(["published", "unpublished"]),
+      body: z.string().min(1).optional(),
+    }),
+  )
+  .handler(async ({ context, input }) => {
+    const [updated] = await context.db
+      .update(posts)
+      .set({
+        status: input.status,
+        // Only touch body when supplied (.optional() input, not a default).
+        ...(input.body !== undefined ? { body: input.body } : {}),
+        // Republishing a post whose published_at is null must set published_at
+        // so the PL-006 invariant (a published post has a non-null
+        // published_at) holds; coalesce keeps an already-published post's
+        // original timestamp. Unpublishing leaves published_at as-is.
+        ...(input.status === "published"
+          ? { publishedAt: sql`coalesce(${posts.publishedAt}, ${Date.now()})` }
+          : {}),
+      })
+      .where(eq(posts.id, input.id))
+      .returning();
+
+    if (!updated) {
+      throw new ORPCError("NOT_FOUND");
+    }
+
+    return updated;
   });
