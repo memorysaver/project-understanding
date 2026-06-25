@@ -54,20 +54,16 @@ function firstMatch(source: string, pattern: RegExp): string | undefined {
 }
 
 /**
- * Parse the first <entry> of an arXiv Atom feed into ArxivMetadata for `id`.
- * Throws ArxivError if no usable entry is present (e.g. unknown id) or required
- * fields are missing.
+ * Map one <entry> body to ArxivMetadata for `id`, or return null if a required
+ * field (title, summary, or any author) is missing. Shared by `parseArxivAtom`
+ * (which throws on null) and `parseArxivBatch` (which skips it). The three URLs
+ * are derived from the canonical id.
  */
-export function parseArxivAtom(xml: string, id: string): ArxivMetadata {
-  const entry = firstMatch(xml, /<entry>([\s\S]*?)<\/entry>/);
-  if (!entry) {
-    throw new ArxivError(`arXiv returned no entry for id "${id}"`);
-  }
-
+function parseEntry(entry: string, id: string): ArxivMetadata | null {
   const title = firstMatch(entry, /<title>([\s\S]*?)<\/title>/);
   const summary = firstMatch(entry, /<summary>([\s\S]*?)<\/summary>/);
   if (!title || !summary) {
-    throw new ArxivError(`arXiv entry for id "${id}" is missing title or summary`);
+    return null;
   }
 
   const authors: string[] = [];
@@ -78,7 +74,7 @@ export function parseArxivAtom(xml: string, id: string): ArxivMetadata {
     if (name) authors.push(name);
   }
   if (authors.length === 0) {
-    throw new ArxivError(`arXiv entry for id "${id}" has no authors`);
+    return null;
   }
 
   return {
@@ -90,6 +86,59 @@ export function parseArxivAtom(xml: string, id: string): ArxivMetadata {
     fullTextUrl: `https://arxiv.org/html/${id}`,
     pdfUrl: `https://arxiv.org/pdf/${id}`,
   };
+}
+
+/**
+ * Extract the canonical arXiv id from an entry's <id> element, dropping the
+ * `http(s)://arxiv.org/abs/` prefix and the trailing version (`v1`, `v2`, …) so
+ * the id matches the dedup key. Returns undefined if no <id> is present.
+ */
+function entryArxivId(entry: string): string | undefined {
+  const raw = firstMatch(entry, /<id>([\s\S]*?)<\/id>/);
+  if (!raw) return undefined;
+  return raw
+    .trim()
+    .replace(/^https?:\/\/arxiv\.org\/abs\//, "")
+    .replace(/v\d+$/, "");
+}
+
+/**
+ * Parse the first <entry> of an arXiv Atom feed into ArxivMetadata for `id`.
+ * Throws ArxivError if no usable entry is present (e.g. unknown id) or required
+ * fields are missing.
+ */
+export function parseArxivAtom(xml: string, id: string): ArxivMetadata {
+  const entry = firstMatch(xml, /<entry>([\s\S]*?)<\/entry>/);
+  if (!entry) {
+    throw new ArxivError(`arXiv returned no entry for id "${id}"`);
+  }
+
+  const metadata = parseEntry(entry, id);
+  if (!metadata) {
+    throw new ArxivError(`arXiv entry for id "${id}" is missing title, summary, or authors`);
+  }
+  return metadata;
+}
+
+/**
+ * Parse every <entry> of an arXiv list feed into ArxivMetadata, deriving each
+ * paper's id from its own <entry> <id> (the list feed returns recent
+ * submissions, not a known id). A malformed entry — missing <id> or a required
+ * field — is skipped rather than thrown, so one bad entry does not fail the
+ * whole batch. An empty feed yields an empty array.
+ */
+export function parseArxivBatch(xml: string): ArxivMetadata[] {
+  const results: ArxivMetadata[] = [];
+  const entryRe = /<entry>([\s\S]*?)<\/entry>/g;
+  let entryMatch: RegExpExecArray | null;
+  while ((entryMatch = entryRe.exec(xml)) !== null) {
+    const entry = entryMatch[1] ?? "";
+    const id = entryArxivId(entry);
+    if (!id) continue;
+    const metadata = parseEntry(entry, id);
+    if (metadata) results.push(metadata);
+  }
+  return results;
 }
 
 /**
