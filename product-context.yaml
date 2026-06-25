@@ -931,7 +931,10 @@ stories:
     activity: ingest-digest
     calibration_type: null
     slice: 2
-    status: pending
+    status: completed
+    completed_at: "2026-06-25T13:54:08Z"
+    pr_url: "https://github.com/memorysaver/project-understanding/pull/20"
+    merge_commit: 1483c30
     priority: high
     business_value: 8
     complexity: M
