@@ -13,11 +13,13 @@ import type { Context, Db } from "../context";
 async function makeDb(): Promise<BunSQLiteDatabase<typeof schema>> {
   const sqlite = new Database(":memory:");
   sqlite.run("PRAGMA foreign_keys = ON");
-  const url = new URL("../../../db/src/migrations/0000_keen_supernaut.sql", import.meta.url);
-  const migration = await Bun.file(url).text();
-  for (const statement of migration.split("--> statement-breakpoint")) {
-    const trimmed = statement.trim();
-    if (trimmed) sqlite.run(trimmed);
+  for (const file of ["0000_keen_supernaut.sql", "0001_far_edwin_jarvis.sql"]) {
+    const url = new URL(`../../../db/src/migrations/${file}`, import.meta.url);
+    const migration = await Bun.file(url).text();
+    for (const statement of migration.split("--> statement-breakpoint")) {
+      const trimmed = statement.trim();
+      if (trimmed) sqlite.run(trimmed);
+    }
   }
   return drizzle(sqlite, { schema });
 }

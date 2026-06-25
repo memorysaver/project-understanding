@@ -13,13 +13,15 @@ import { publish, sanitizeBody, buildCitation } from "./index";
 async function makeDb(): Promise<BunSQLiteDatabase<typeof schema>> {
   const sqlite = new Database(":memory:");
   sqlite.run("PRAGMA foreign_keys = ON");
-  // The migration ships with @paperlens/db; resolve it relative to the package.
+  // The migrations ship with @paperlens/db; resolve them relative to the package.
   const schemaUrl = import.meta.resolve("@paperlens/db/schema/paperlens");
-  const migrationUrl = new URL("../migrations/0000_keen_supernaut.sql", schemaUrl);
-  const migration = await Bun.file(migrationUrl).text();
-  for (const statement of migration.split("--> statement-breakpoint")) {
-    const trimmed = statement.trim();
-    if (trimmed) sqlite.run(trimmed);
+  for (const file of ["0000_keen_supernaut.sql", "0001_far_edwin_jarvis.sql"]) {
+    const migrationUrl = new URL(`../migrations/${file}`, schemaUrl);
+    const migration = await Bun.file(migrationUrl).text();
+    for (const statement of migration.split("--> statement-breakpoint")) {
+      const trimmed = statement.trim();
+      if (trimmed) sqlite.run(trimmed);
+    }
   }
   return drizzle(sqlite, { schema });
 }

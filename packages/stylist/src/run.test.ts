@@ -9,23 +9,23 @@ import type { LlmMessage } from "@paperlens/llm";
 import type { complete as Complete } from "@paperlens/llm";
 import { run, stripFabricatedCitation } from "./run";
 
-// Locate the D1 migration that ships with @paperlens/db relative to its seed
+// Locate the D1 migrations that ship with @paperlens/db relative to its seed
 // module (the package's `./*` export only maps `.ts`, not the `.sql` file).
-const MIGRATION_URL = new URL(
-  "./migrations/0000_keen_supernaut.sql",
-  import.meta.resolve("@paperlens/db/seed"),
-);
+const MIGRATION_FILES = ["0000_keen_supernaut.sql", "0001_far_edwin_jarvis.sql"];
 
-// Build an in-memory SQLite database with the real D1 migration applied. D1 and
+// Build an in-memory SQLite database with the real D1 migrations applied. D1 and
 // bun-sqlite share the SQLite dialect, so the same migration + Drizzle defs
 // exercise the real schema without a Cloudflare binding (mirrors db tests).
 async function makeDb(): Promise<BunSQLiteDatabase<typeof schema>> {
   const sqlite = new Database(":memory:");
   sqlite.run("PRAGMA foreign_keys = ON");
-  const migration = await Bun.file(MIGRATION_URL).text();
-  for (const statement of migration.split("--> statement-breakpoint")) {
-    const trimmed = statement.trim();
-    if (trimmed) sqlite.run(trimmed);
+  for (const file of MIGRATION_FILES) {
+    const url = new URL(`./migrations/${file}`, import.meta.resolve("@paperlens/db/seed"));
+    const migration = await Bun.file(url).text();
+    for (const statement of migration.split("--> statement-breakpoint")) {
+      const trimmed = statement.trim();
+      if (trimmed) sqlite.run(trimmed);
+    }
   }
   return drizzle(sqlite, { schema });
 }
