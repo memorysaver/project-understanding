@@ -119,6 +119,11 @@ export async function run(args: DigestorRunArgs) {
           methods: json.methods,
           results: json.results,
           rawJson: json,
+          // PL-031: record whether this digest came from full text or only the
+          // abstract, from the abstract-only signal already detected above. The
+          // orchestrator defers/flags an abstract-only digest rather than
+          // publishing it blind.
+          sourceKind: abstractOnly ? "abstract" : "full_text",
           model,
         })
         .returning()

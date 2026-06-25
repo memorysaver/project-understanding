@@ -278,6 +278,51 @@ describe("PL-004 digestor", () => {
     expect(user).toContain("Abstract (full text unavailable)");
   });
 
+  // PL-031 (task 5.1): a digest produced from full text records source_kind
+  // full_text.
+  test("records source_kind = full_text when digesting from full text", async () => {
+    const db = await makeDb();
+    await insertPaper(db); // abstract: "We study things and find results."
+
+    const digest = await run({
+      paperId: "2401.00004",
+      db,
+      fetchFullText: fixtureFetcher, // FIXTURE_FULL_TEXT != abstract -> full text
+      complete: mockComplete(),
+    });
+
+    expect(digest.sourceKind).toBe("full_text");
+    const row = (
+      await db.select().from(schema.digests).where(eq(schema.digests.paperId, "2401.00004"))
+    )[0]!;
+    expect(row.sourceKind).toBe("full_text");
+  });
+
+  // PL-031 (task 5.1): a digest produced from the abstract fallback (the fetcher
+  // returns the stored abstract verbatim) records source_kind = abstract and is
+  // queryable as such.
+  test("records source_kind = abstract when only the abstract is available", async () => {
+    const db = await makeDb();
+    await insertPaper(db); // abstract: "We study things and find results."
+    const abstractFetcher = async () => "We study things and find results.";
+
+    const digest = await run({
+      paperId: "2401.00004",
+      db,
+      fetchFullText: abstractFetcher,
+      complete: mockComplete(),
+    });
+
+    expect(digest.sourceKind).toBe("abstract");
+    const row = (
+      await db
+        .select()
+        .from(schema.digests)
+        .where(eq(schema.digests.sourceKind, "abstract"))
+    )[0]!;
+    expect(row.paperId).toBe("2401.00004");
+  });
+
   // PL-030: real full text (differs from the abstract) is NOT treated as
   // abstract-only — the guard is absent.
   test("full-text input does NOT add the abstract-only guard", async () => {
