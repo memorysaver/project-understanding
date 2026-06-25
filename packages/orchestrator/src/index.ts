@@ -15,8 +15,8 @@
 // when the Paper is not already past that stage, and overwrites only its own
 // single-per-Paper output, so a redelivered message resumes from the last good
 // intermediate without duplicating output or redoing prior stages.
-import { and, eq } from "drizzle-orm";
-import { papers, posts, runs, stylePrompts } from "@paperlens/db/schema/paperlens";
+import { and, desc, eq } from "drizzle-orm";
+import { digests, papers, posts, runs, stylePrompts } from "@paperlens/db/schema/paperlens";
 import type { PaperStatus, RunStats } from "@paperlens/db/schema/paperlens";
 import { complete as defaultComplete } from "@paperlens/llm";
 import { fetchById, type CrawlerDb, type FetchLike } from "@paperlens/crawler";
@@ -121,6 +121,30 @@ function isAtOrPast(current: PaperStatus, status: PaperStatus): boolean {
   return STATUS_RANK[current] >= STATUS_RANK[status];
 }
 
+/**
+ * Deferral budget (PL-031): how many times an abstract-only paper may be
+ * re-enqueued for a later `digest` retry before the bounded FLAGGED fallback
+ * publishes it. arXiv (ar5iv) typically renders full text within ~2 days, so a
+ * small budget gives full text time to appear without deferring forever.
+ */
+export const MAX_DEFER_ATTEMPTS = 3;
+
+/**
+ * Load the paper's current Digest (the most recent), or null if none yet. Used by
+ * the digest stage to read its `source_kind` and to relax the resume guard for an
+ * abstract-only Digest (PL-031).
+ */
+async function loadCurrentDigest(db: CrawlerDb, paperId: string) {
+  return (
+    await db
+      .select()
+      .from(digests)
+      .where(eq(digests.paperId, paperId))
+      .orderBy(desc(digests.createdAt))
+      .limit(1)
+  )[0];
+}
+
 /** Load a Paper by arXiv id, throwing if it has vanished. */
 async function loadPaper(db: CrawlerDb, arxivId: string) {
   const paper = (await db.select().from(papers).where(eq(papers.arxivId, arxivId)))[0];
@@ -172,9 +196,22 @@ export async function handleDiscover(
 
 /**
  * `digest`: load the Paper, run the digestor (one LLM call → persists the Digest
- * and advances `discovered → digested`), then enqueue `style`. Resume-safe: if
- * the Paper is already at/past `digested`, the digestor is skipped and `style`
- * is re-enqueued from the existing Digest intermediate.
+ * and advances `discovered → digested`), then act on the Digest's `source_kind`
+ * (PL-031):
+ *
+ * - `full_text` → enqueue `style` as before.
+ * - `abstract` within the deferral budget → **defer**: do NOT enqueue `style`;
+ *   re-enqueue this `digest` with an incremented `deferAttempt` so the paper is
+ *   re-digested once full text renders, instead of being published blind.
+ * - `abstract` with the deferral budget exhausted → **bounded fallback**: enqueue
+ *   `style`, so the paper is published with the explicit lower-confidence flag it
+ *   carries via its persisted `source_kind = abstract` (never deferred forever).
+ *
+ * Resume-safe. The at/past-`digested` short-circuit is relaxed only for an
+ * abstract-only Digest: such a paper is re-digested on retry so a now-rendered
+ * full text replaces the abstract-only Digest with a `full_text` one (the prior
+ * abstract Digest is removed first, preserving the single-current-Digest
+ * invariant). A `full_text` Digest is never re-run.
  */
 export async function handleDigest(
   message: Extract<PipelineMessage, { type: "digest" }>,
@@ -185,13 +222,45 @@ export async function handleDigest(
   const complete = deps.complete ?? defaultComplete;
 
   const paper = await loadPaper(db, message.arxiv_id);
-  if (!isAtOrPast(paper.status, "digested")) {
+  const current = await loadCurrentDigest(db, message.arxiv_id);
+  // Re-run the digestor when the paper has not reached `digested` yet, OR when its
+  // current Digest is abstract-only (re-digest on retry to pick up rendered full
+  // text). A `full_text` Digest is never re-run — the resume short-circuit holds.
+  const needsDigest = !isAtOrPast(paper.status, "digested") || current?.sourceKind === "abstract";
+  if (needsDigest) {
+    // Re-digesting an abstract-only paper: drop the prior abstract Digest first so
+    // the new one replaces it (single-current-Digest-per-Paper invariant). No Post
+    // exists yet for an abstract-only paper (it was deferred, never styled), so this
+    // cascades nothing.
+    if (current?.sourceKind === "abstract") {
+      await db.delete(digests).where(eq(digests.id, current.id));
+    }
     await runDigestor({
       paperId: message.arxiv_id,
       db,
       fetchFullText: deps.fetchFullText ?? fetchArxivFullText,
       complete,
     });
+  }
+
+  // Read the now-current Digest's source_kind to route (PL-031).
+  const digest = await loadCurrentDigest(db, message.arxiv_id);
+  if (digest?.sourceKind === "abstract") {
+    const deferAttempt = message.deferAttempt ?? 0;
+    if (deferAttempt < MAX_DEFER_ATTEMPTS) {
+      // Defer: re-enqueue for a later digest retry with backoff. Do NOT advance to
+      // style — an abstract-only paper is never published as a normal post.
+      await queue.send({
+        type: "digest",
+        arxiv_id: message.arxiv_id,
+        runId: message.runId,
+        deferAttempt: deferAttempt + 1,
+      });
+      return;
+    }
+    // Budget exhausted: fall through to enqueue style — the bounded FLAGGED
+    // fallback. The post is distinguishable as lower-confidence via the paper's
+    // persisted `source_kind = abstract`; it is published, not deferred forever.
   }
 
   await queue.send({ type: "style", arxiv_id: message.arxiv_id, runId: message.runId });

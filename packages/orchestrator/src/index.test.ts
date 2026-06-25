@@ -15,6 +15,7 @@ import {
   handlePublish,
   dispatch,
   parsePipelineMessage,
+  MAX_DEFER_ATTEMPTS,
   type PipelineMessage,
   type PipelineDeps,
   type QueueProducer,
@@ -26,14 +27,16 @@ import {
 async function makeDb(): Promise<BunSQLiteDatabase<typeof schema>> {
   const sqlite = new Database(":memory:");
   sqlite.run("PRAGMA foreign_keys = ON");
-  const migrationUrl = new URL(
-    "../migrations/0000_keen_supernaut.sql",
-    import.meta.resolve("@paperlens/db/schema/index"),
-  );
-  const migration = await Bun.file(migrationUrl).text();
-  for (const statement of migration.split("--> statement-breakpoint")) {
-    const trimmed = statement.trim();
-    if (trimmed) sqlite.run(trimmed);
+  for (const file of ["0000_keen_supernaut.sql", "0001_far_edwin_jarvis.sql"]) {
+    const migrationUrl = new URL(
+      `../migrations/${file}`,
+      import.meta.resolve("@paperlens/db/schema/index"),
+    );
+    const migration = await Bun.file(migrationUrl).text();
+    for (const statement of migration.split("--> statement-breakpoint")) {
+      const trimmed = statement.trim();
+      if (trimmed) sqlite.run(trimmed);
+    }
   }
   return drizzle(sqlite, { schema });
 }
@@ -406,5 +409,191 @@ describe("PL-018 orchestrator — 6.5 integration (batch through the wired dispa
     expect(papers).toHaveLength(seed.length);
     expect(papers.every((p) => p.status === "published")).toBe(true);
     expect(runId).toBeString();
+  });
+});
+
+// PL-031 — abstract-only papers are deferred (re-queued for re-digest once full
+// text renders) or, at the deferral budget, published with the explicit
+// lower-confidence flag — never published as a normal post blind.
+describe("PL-031 orchestrator — defer/flag abstract-only papers", () => {
+  // An abstract-only fetcher: returns the paper's own stored abstract verbatim,
+  // so the digestor's `fullText === abstract` check marks the Digest `abstract`.
+  const abstractOnlyFetch = async (paper: { abstract: string }) => paper.abstract;
+  // A full-text fetcher: returns text that differs from the abstract → full_text.
+  const fullTextFetch = async () => "Rendered full text, distinct from the abstract.";
+
+  function depsWith(
+    db: CrawlerDb,
+    queue: QueueProducer,
+    complete: typeof Complete,
+    fetchFullText: PipelineDeps["fetchFullText"],
+  ): PipelineDeps {
+    return { db, queue, complete, fetcher: fixtureFetcher, fetchFullText, seed: [FIXTURE_ID] };
+  }
+
+  // Seed one discovered Paper (no digest yet) for the digest-stage tests.
+  async function seedPaper(db: CrawlerDb, queue: QueueProducer, complete: typeof Complete) {
+    await handleDiscover(
+      { type: "discover", runId: "r" },
+      depsWith(db, queue, complete, fullTextFetch),
+    );
+  }
+
+  // Task 5.2 — an abstract-only paper does not enqueue `style`, is re-enqueued for
+  // a later `digest` retry, and a redelivery does not reset the backoff.
+  test("abstract-only paper defers (re-queues digest) instead of advancing to style", async () => {
+    const db = await makeDb();
+    const { queue, sent } = fakeQueue();
+    const llm = mockComplete();
+    const deps = depsWith(db, queue, llm.fn, abstractOnlyFetch);
+    await seedPaper(db, queue, llm.fn);
+    sent.length = 0;
+
+    await handleDigest({ type: "digest", arxiv_id: FIXTURE_ID, runId: "r" }, deps);
+
+    // Digest recorded as abstract; NO style enqueued; a digest retry enqueued with
+    // deferAttempt = 1.
+    const digest = (await db.select().from(schema.digests))[0]!;
+    expect(digest.sourceKind).toBe("abstract");
+    expect(sent.some((m) => m.type === "style")).toBe(false);
+    expect(sent).toEqual([
+      { type: "digest", arxiv_id: FIXTURE_ID, runId: "r", deferAttempt: 1 },
+    ]);
+    // No Post produced — the paper was not published as a normal post.
+    expect(await db.select().from(schema.posts)).toHaveLength(0);
+  });
+
+  test("a redelivery of the same defer message does not reset or advance the backoff", async () => {
+    const db = await makeDb();
+    const { queue, sent } = fakeQueue();
+    const llm = mockComplete();
+    const deps = depsWith(db, queue, llm.fn, abstractOnlyFetch);
+    await seedPaper(db, queue, llm.fn);
+    sent.length = 0;
+
+    // Deliver the deferAttempt=1 message twice (at-least-once). Each redelivery
+    // re-evaluates and enqueues exactly one deferAttempt=2 — it does not reset to 1
+    // nor skip ahead. The counter advances only with the message, idempotently.
+    const msg = { type: "digest", arxiv_id: FIXTURE_ID, runId: "r", deferAttempt: 1 } as const;
+    await handleDigest(msg, deps);
+    await handleDigest(msg, deps);
+
+    expect(sent).toEqual([
+      { type: "digest", arxiv_id: FIXTURE_ID, runId: "r", deferAttempt: 2 },
+      { type: "digest", arxiv_id: FIXTURE_ID, runId: "r", deferAttempt: 2 },
+    ]);
+    // Still exactly one current Digest (re-digest replaced, did not accumulate).
+    expect(await db.select().from(schema.digests)).toHaveLength(1);
+    expect(sent.some((m) => m.type === "style")).toBe(false);
+  });
+
+  // Task 5.3 — an abstract-only paper at the deferral budget is published with the
+  // explicit flag (enqueues style → publish), not deferred again.
+  test("at the deferral budget, an abstract-only paper is flagged and advances to style", async () => {
+    const db = await makeDb();
+    const { queue, sent } = fakeQueue();
+    const llm = mockComplete();
+    const deps = depsWith(db, queue, llm.fn, abstractOnlyFetch);
+    await seedPaper(db, queue, llm.fn);
+    sent.length = 0;
+
+    // deferAttempt has reached the budget: do NOT defer again; enqueue style so the
+    // paper is published, distinguishable as lower-confidence via source_kind.
+    await handleDigest(
+      { type: "digest", arxiv_id: FIXTURE_ID, runId: "r", deferAttempt: MAX_DEFER_ATTEMPTS },
+      deps,
+    );
+
+    const digest = (await db.select().from(schema.digests))[0]!;
+    expect(digest.sourceKind).toBe("abstract"); // the explicit lower-confidence flag
+    expect(sent).toEqual([{ type: "style", arxiv_id: FIXTURE_ID, runId: "r" }]);
+    expect(sent.some((m) => m.type === "digest")).toBe(false); // not deferred again
+  });
+
+  // Task 5.4 — a paper whose current Digest is `abstract`, when retried with full
+  // text now available, is re-digested to `full_text` before proceeding to publish.
+  test("an abstract-only paper gaining full text is re-digested to full_text, then advances to style", async () => {
+    const db = await makeDb();
+    const { queue, sent } = fakeQueue();
+    const llm = mockComplete();
+    await seedPaper(db, queue, llm.fn);
+
+    // First digest: abstract-only → defers.
+    await handleDigest(
+      { type: "digest", arxiv_id: FIXTURE_ID, runId: "r" },
+      depsWith(db, queue, llm.fn, abstractOnlyFetch),
+    );
+    const first = (await db.select().from(schema.digests))[0]!;
+    expect(first.sourceKind).toBe("abstract");
+    sent.length = 0;
+
+    // Retry: full text now renders → re-digest replaces the abstract Digest with a
+    // full_text one, and the paper advances to style (no further defer).
+    await handleDigest(
+      { type: "digest", arxiv_id: FIXTURE_ID, runId: "r", deferAttempt: 1 },
+      depsWith(db, queue, llm.fn, fullTextFetch),
+    );
+
+    const allDigests = await db.select().from(schema.digests);
+    expect(allDigests).toHaveLength(1); // replaced, not accumulated
+    expect(allDigests[0]!.sourceKind).toBe("full_text");
+    expect(sent).toEqual([{ type: "style", arxiv_id: FIXTURE_ID, runId: "r" }]);
+    expect(sent.some((m) => m.type === "digest")).toBe(false);
+  });
+
+  // A full_text Digest is never re-run on redelivery (resume short-circuit holds):
+  // the relax is scoped to abstract-only Digests only.
+  test("a full_text Digest is not re-digested on redelivery (resume short-circuit)", async () => {
+    const db = await makeDb();
+    const { queue, sent } = fakeQueue();
+    const llm = mockComplete();
+    const deps = depsWith(db, queue, llm.fn, fullTextFetch);
+    await seedPaper(db, queue, llm.fn);
+
+    await handleDigest({ type: "digest", arxiv_id: FIXTURE_ID, runId: "r" }, deps);
+    const callsAfterFirst = llm.calls();
+    sent.length = 0;
+
+    await handleDigest({ type: "digest", arxiv_id: FIXTURE_ID, runId: "r" }, deps);
+
+    expect(llm.calls()).toBe(callsAfterFirst); // digestor NOT re-run
+    expect(await db.select().from(schema.digests)).toHaveLength(1);
+    expect(sent).toEqual([{ type: "style", arxiv_id: FIXTURE_ID, runId: "r" }]);
+  });
+
+  // Task 5.5 — integration: an abstract-only paper driven through the wired
+  // dispatch is never published as a normal post while within budget; it defers.
+  test("integration: an abstract-only paper within budget is deferred through dispatch, never published", async () => {
+    const db = await makeDb();
+    const { queue, sent } = fakeQueue();
+    const llm = mockComplete();
+    const deps = depsWith(db, queue, llm.fn, abstractOnlyFetch);
+
+    // Drive from discovery, draining the queue but STOPPING re-enqueued digest
+    // defers (we don't loop them forever — assert the first defer is observed and
+    // nothing is published). Each digest delivery defers; no style/publish runs.
+    const { runId } = await enqueueDiscovery("manual", deps);
+    let deferred = false;
+    let guard = 0;
+    while (sent.length > 0 && guard++ < 10) {
+      const message = sent.shift()!;
+      if (message.type === "digest" && (message.deferAttempt ?? 0) > 0) {
+        // Observed the backoff re-enqueue; do not loop it (within-budget defer).
+        deferred = true;
+        break;
+      }
+      await dispatch(message, deps, OK);
+    }
+
+    expect(runId).toBeString();
+    expect(deferred).toBe(true); // the paper was deferred, not advanced
+    // No Post at all — never published as a normal post.
+    expect(await db.select().from(schema.posts)).toHaveLength(0);
+    const paper = (
+      await db.select().from(schema.papers).where(eq(schema.papers.arxivId, FIXTURE_ID))
+    )[0]!;
+    expect(paper.status).toBe("digested"); // digested but held — not styled/published
+    // The held Digest is abstract-only.
+    expect((await db.select().from(schema.digests))[0]!.sourceKind).toBe("abstract");
   });
 });

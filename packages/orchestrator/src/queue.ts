@@ -18,10 +18,14 @@ export type PipelineMessageType = (typeof PIPELINE_MESSAGE_TYPES)[number];
  * - `digest` / `style` / `publish` each carry the target paper's `arxiv_id`.
  * - `runId` is the discovery `Run`'s id, threaded through every message so a
  *   run's stats can be aggregated.
+ * - `digest` also carries an optional `deferAttempt` (PL-031): the number of
+ *   times this paper has been deferred because it was abstract-only. It is
+ *   incremented only on an actual defer (a redelivery of the same message keeps
+ *   the same value), so it bounds the deferral budget idempotently.
  */
 export type PipelineMessage =
   | { type: "discover"; runId: string; arxiv_id?: undefined }
-  | { type: "digest"; arxiv_id: string; runId: string }
+  | { type: "digest"; arxiv_id: string; runId: string; deferAttempt?: number }
   | { type: "style"; arxiv_id: string; runId: string }
   | { type: "publish"; arxiv_id: string; runId: string };
 
@@ -42,7 +46,18 @@ export function parsePipelineMessage(value: unknown): PipelineMessage | null {
   if (msg.type === "discover") {
     return { type: "discover", runId: msg.runId };
   }
-  if (msg.type === "digest" || msg.type === "style" || msg.type === "publish") {
+  if (msg.type === "digest") {
+    if (typeof msg.arxiv_id !== "string") return null;
+    const out: Extract<PipelineMessage, { type: "digest" }> = {
+      type: "digest",
+      arxiv_id: msg.arxiv_id,
+      runId: msg.runId,
+    };
+    // Carry the deferral counter through when present (PL-031); ignore non-numbers.
+    if (typeof msg.deferAttempt === "number") out.deferAttempt = msg.deferAttempt;
+    return out;
+  }
+  if (msg.type === "style" || msg.type === "publish") {
     if (typeof msg.arxiv_id !== "string") return null;
     return { type: msg.type, arxiv_id: msg.arxiv_id, runId: msg.runId };
   }

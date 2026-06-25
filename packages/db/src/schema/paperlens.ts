@@ -11,6 +11,13 @@ export type PaperStatus = (typeof paperStatuses)[number];
 export const postStatuses = ["draft", "unpublished", "published"] as const;
 export type PostStatus = (typeof postStatuses)[number];
 
+// Digest source kind (PL-031): whether the digest was produced from the paper's
+// full text or only from its abstract (the abstract-only fallback the digestor
+// already detects). An `abstract` digest is a known lower-confidence artifact the
+// orchestrator defers or flags rather than publishing blind.
+export const digestSourceKinds = ["full_text", "abstract"] as const;
+export type DigestSourceKind = (typeof digestSourceKinds)[number];
+
 // Run trigger + status enums (tech-spec §2).
 export const runTriggers = ["manual", "cron"] as const;
 export type RunTrigger = (typeof runTriggers)[number];
@@ -62,6 +69,11 @@ export const digests = sqliteTable(
     methods: text("methods", { mode: "json" }).$type<string[]>().notNull(),
     results: text("results", { mode: "json" }).$type<string[]>().notNull(),
     rawJson: text("raw_json", { mode: "json" }),
+    // Whether this digest came from the paper's full text or only its abstract
+    // (PL-031). Defaults to full_text so existing rows and the common path need no
+    // special handling; the digestor sets `abstract` when only the abstract was
+    // available (the abstract-only signal it already detects).
+    sourceKind: text("source_kind", { enum: digestSourceKinds }).default("full_text").notNull(),
     model: text("model").notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)

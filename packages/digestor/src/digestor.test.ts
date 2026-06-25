@@ -14,14 +14,13 @@ import { run, digestSchema, fetchArxivFullText } from "./index";
 async function makeDb(): Promise<BunSQLiteDatabase<typeof schema>> {
   const sqlite = new Database(":memory:");
   sqlite.run("PRAGMA foreign_keys = ON");
-  const url = new URL(
-    "./migrations/0000_keen_supernaut.sql",
-    import.meta.resolve("@paperlens/db/seed"),
-  );
-  const migration = await Bun.file(url).text();
-  for (const statement of migration.split("--> statement-breakpoint")) {
-    const trimmed = statement.trim();
-    if (trimmed) sqlite.run(trimmed);
+  for (const file of ["0000_keen_supernaut.sql", "0001_far_edwin_jarvis.sql"]) {
+    const url = new URL(`./migrations/${file}`, import.meta.resolve("@paperlens/db/seed"));
+    const migration = await Bun.file(url).text();
+    for (const statement of migration.split("--> statement-breakpoint")) {
+      const trimmed = statement.trim();
+      if (trimmed) sqlite.run(trimmed);
+    }
   }
   return drizzle(sqlite, { schema });
 }
@@ -277,6 +276,51 @@ describe("PL-004 digestor", () => {
     expect(system).toContain("Do NOT invent");
     const user = captured!.messages.find((m) => m.role === "user")!.content;
     expect(user).toContain("Abstract (full text unavailable)");
+  });
+
+  // PL-031 (task 5.1): a digest produced from full text records source_kind
+  // full_text.
+  test("records source_kind = full_text when digesting from full text", async () => {
+    const db = await makeDb();
+    await insertPaper(db); // abstract: "We study things and find results."
+
+    const digest = await run({
+      paperId: "2401.00004",
+      db,
+      fetchFullText: fixtureFetcher, // FIXTURE_FULL_TEXT != abstract -> full text
+      complete: mockComplete(),
+    });
+
+    expect(digest.sourceKind).toBe("full_text");
+    const row = (
+      await db.select().from(schema.digests).where(eq(schema.digests.paperId, "2401.00004"))
+    )[0]!;
+    expect(row.sourceKind).toBe("full_text");
+  });
+
+  // PL-031 (task 5.1): a digest produced from the abstract fallback (the fetcher
+  // returns the stored abstract verbatim) records source_kind = abstract and is
+  // queryable as such.
+  test("records source_kind = abstract when only the abstract is available", async () => {
+    const db = await makeDb();
+    await insertPaper(db); // abstract: "We study things and find results."
+    const abstractFetcher = async () => "We study things and find results.";
+
+    const digest = await run({
+      paperId: "2401.00004",
+      db,
+      fetchFullText: abstractFetcher,
+      complete: mockComplete(),
+    });
+
+    expect(digest.sourceKind).toBe("abstract");
+    const row = (
+      await db
+        .select()
+        .from(schema.digests)
+        .where(eq(schema.digests.sourceKind, "abstract"))
+    )[0]!;
+    expect(row.paperId).toBe("2401.00004");
   });
 
   // PL-030: real full text (differs from the abstract) is NOT treated as
