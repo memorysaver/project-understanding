@@ -8,6 +8,23 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"   # || pwd: don't abort under set -e before git init
 cd "$REPO_ROOT"
 
+# ── Seed gitignored .env from the main checkout (worktrees start without them) ──
+# apps/*/.env and packages/infra/.env are gitignored, so `git worktree add` does NOT bring
+# them — a fresh feature worktree gets empty/absent .env and the Cloudflare Worker dev server
+# cannot boot (blocking UI dogfood). The main checkout is the first entry of `git worktree
+# list`; copy its .env into this worktree when ours is missing or empty (idempotent — never
+# clobbers a populated .env).
+MAIN_REPO="$(git worktree list --porcelain 2>/dev/null | head -1 | sed 's/^worktree //')" || MAIN_REPO=""
+if [ -n "$MAIN_REPO" ] && [ "$MAIN_REPO" != "$REPO_ROOT" ]; then
+  for env in apps/web/.env apps/server/.env packages/infra/.env; do
+    if [ -f "$MAIN_REPO/$env" ] && [ ! -s "$REPO_ROOT/$env" ]; then
+      mkdir -p "$(dirname "$REPO_ROOT/$env")"
+      cp "$MAIN_REPO/$env" "$REPO_ROOT/$env"
+      echo "seeded $env from main checkout"
+    fi
+  done
+fi
+
 # ── Install dependencies (idempotent) ──
 bun install
 
