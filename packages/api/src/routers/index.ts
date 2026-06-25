@@ -1,5 +1,5 @@
 import { protectedProcedure, publicProcedure } from "../index";
-import { getPost, listPosts } from "./posts";
+import { getPost, listPosts, setPostStatus } from "./posts";
 import { getActivePrompt, updateActivePrompt } from "./prompt";
 import type { RouterClient } from "@orpc/server";
 
@@ -15,6 +15,7 @@ export const appRouter = {
   }),
   listPosts,
   getPost,
+  setPostStatus,
   getActivePrompt,
   updateActivePrompt,
 };
