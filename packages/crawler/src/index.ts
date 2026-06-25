@@ -102,6 +102,11 @@ export interface DiscoverArgs {
  * `papers` before the run): a paper already stored (from a prior run or a prior
  * `fetchById`) is left unchanged and is NOT returned, so the orchestrator fans
  * out over genuinely new work. Re-running over the same batch returns [].
+ *
+ * arXiv etiquette: one list request returns the whole batch (N = `maxResults`),
+ * so a discovery run is a single API call carrying the custom `USER_AGENT` — well
+ * within arXiv's ~1 req/3s limit. (MVP does not page; a future paged variant must
+ * space its requests by the exported `ARXIV_MIN_INTERVAL_MS`.)
  */
 export async function discover(args: DiscoverArgs): Promise<Paper[]> {
   const { db } = args;
