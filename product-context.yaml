@@ -991,7 +991,10 @@ stories:
     activity: restyle-publish
     calibration_type: null
     slice: 2
-    status: pending
+    status: completed
+    completed_at: "2026-06-25T13:45:14Z"
+    pr_url: "https://github.com/memorysaver/project-understanding/pull/19"
+    merge_commit: c96932f
     priority: medium
     business_value: 6
     complexity: S
