@@ -111,3 +111,33 @@ export async function fetchArxivMetadata(id: string, fetcher: FetchLike): Promis
   const xml = await response.text();
   return parseArxivAtom(xml, id);
 }
+
+/**
+ * Fetch the raw Atom body for a batch of recent papers via the arXiv list
+ * endpoint (`search_query=...&sortBy=submittedDate&sortOrder=descending&max_results=N`),
+ * using the injected fetcher and the required custom User-Agent. Returns the
+ * Atom XML, which `parseArxivBatch` turns into per-paper metadata. This reuses
+ * the same API base, User-Agent, and error surface as `fetchArxivMetadata` — the
+ * only difference is the list query instead of `id_list=<one id>`.
+ */
+export async function fetchArxivBatch(
+  query: string,
+  maxResults: number,
+  fetcher: FetchLike,
+): Promise<string> {
+  const url =
+    `${ARXIV_API_BASE}?search_query=${encodeURIComponent(query)}` +
+    `&sortBy=submittedDate&sortOrder=descending&max_results=${maxResults}`;
+  let response: Awaited<ReturnType<FetchLike>>;
+  try {
+    response = await fetcher(url, { headers: { "User-Agent": USER_AGENT } });
+  } catch (cause) {
+    throw new ArxivError(`arXiv batch request failed for query "${query}"`, { cause });
+  }
+  if (!response.ok) {
+    throw new ArxivError(
+      `arXiv batch request for query "${query}" returned status ${response.status}`,
+    );
+  }
+  return response.text();
+}
