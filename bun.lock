@@ -95,6 +95,7 @@
         "@paperlens/auth": "workspace:*",
         "@paperlens/db": "workspace:*",
         "@paperlens/env": "workspace:*",
+        "@paperlens/orchestrator": "workspace:*",
         "dotenv": "catalog:",
         "zod": "catalog:",
       },
