@@ -964,7 +964,13 @@ stories:
     activity: ingest-digest
     calibration_type: null
     slice: 3
-    status: pending
+    status: completed
+    assigned_to: a034e381081f532d4
+    openspec_change: PL-020
+    readiness_score: 0.85
+    completed_at: "2026-06-26T07:36:00Z"
+    pr_url: "https://github.com/memorysaver/project-understanding/pull/22"
+    merge_commit: 96ee0fe
     priority: high
     business_value: 8
     complexity: S
