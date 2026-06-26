@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from "./routes/__root";
 import { Route as LoginRouteImport } from "./routes/login";
 import { Route as DashboardRouteImport } from "./routes/dashboard";
 import { Route as IndexRouteImport } from "./routes/index";
+import { Route as ConsoleIndexRouteImport } from "./routes/console/index";
 import { Route as PostsIdRouteImport } from "./routes/posts.$id";
 import { Route as ConsolePostsRouteImport } from "./routes/console/posts";
 
@@ -28,6 +29,11 @@ const DashboardRoute = DashboardRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: "/",
   path: "/",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ConsoleIndexRoute = ConsoleIndexRouteImport.update({
+  id: "/console/",
+  path: "/console/",
   getParentRoute: () => rootRouteImport,
 } as any);
 const PostsIdRoute = PostsIdRouteImport.update({
@@ -47,6 +53,7 @@ export interface FileRoutesByFullPath {
   "/login": typeof LoginRoute;
   "/console/posts": typeof ConsolePostsRoute;
   "/posts/$id": typeof PostsIdRoute;
+  "/console/": typeof ConsoleIndexRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
@@ -54,6 +61,7 @@ export interface FileRoutesByTo {
   "/login": typeof LoginRoute;
   "/console/posts": typeof ConsolePostsRoute;
   "/posts/$id": typeof PostsIdRoute;
+  "/console": typeof ConsoleIndexRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
@@ -62,13 +70,14 @@ export interface FileRoutesById {
   "/login": typeof LoginRoute;
   "/console/posts": typeof ConsolePostsRoute;
   "/posts/$id": typeof PostsIdRoute;
+  "/console/": typeof ConsoleIndexRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
-  fullPaths: "/" | "/dashboard" | "/login" | "/console/posts" | "/posts/$id";
+  fullPaths: "/" | "/dashboard" | "/login" | "/console/posts" | "/posts/$id" | "/console/";
   fileRoutesByTo: FileRoutesByTo;
-  to: "/" | "/dashboard" | "/login" | "/console/posts" | "/posts/$id";
-  id: "__root__" | "/" | "/dashboard" | "/login" | "/console/posts" | "/posts/$id";
+  to: "/" | "/dashboard" | "/login" | "/console/posts" | "/posts/$id" | "/console";
+  id: "__root__" | "/" | "/dashboard" | "/login" | "/console/posts" | "/posts/$id" | "/console/";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
@@ -77,6 +86,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute;
   ConsolePostsRoute: typeof ConsolePostsRoute;
   PostsIdRoute: typeof PostsIdRoute;
+  ConsoleIndexRoute: typeof ConsoleIndexRoute;
 }
 
 declare module "@tanstack/react-router" {
@@ -102,6 +112,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof IndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/console/": {
+      id: "/console/";
+      path: "/console";
+      fullPath: "/console/";
+      preLoaderRoute: typeof ConsoleIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/posts/$id": {
       id: "/posts/$id";
       path: "/posts/$id";
@@ -125,6 +142,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ConsolePostsRoute: ConsolePostsRoute,
   PostsIdRoute: PostsIdRoute,
+  ConsoleIndexRoute: ConsoleIndexRoute,
 };
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

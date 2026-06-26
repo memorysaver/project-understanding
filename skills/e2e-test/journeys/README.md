@@ -9,10 +9,11 @@ How to run a journey is in the **execution protocol** of [`../SKILL.md`](../SKIL
 
 ## The library
 
-| #  | Journey                                      | Covers (layer / criteria)   |
-| -- | -------------------------------------------- | --------------------------- |
-| 00 | [Walking skeleton](00-walking-skeleton.md)   | Layer 0 — MVP contract path |
-| .. | _add a row per journey as the product grows_ | _layer N / criterion ids_   |
+| #  | Journey                                      | Covers (layer / criteria)            |
+| -- | -------------------------------------------- | ------------------------------------ |
+| 00 | [Walking skeleton](00-walking-skeleton.md)   | Layer 0 — MVP contract path          |
+| 20 | [Run-now trigger](20-run-now-trigger.md)     | Layer 1 — PL-020 (auth-gated trigger) |
+| .. | _add a row per journey as the product grows_ | _layer N / criterion ids_            |
 
 ## Journey doc template
 
