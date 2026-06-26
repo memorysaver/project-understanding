@@ -866,7 +866,10 @@ stories:
     activity: restyle-publish
     calibration_type: null
     slice: 1
-    status: pending
+    status: completed
+    satisfied_by: PL-005
+    completed_at: "2026-06-26T07:45:00Z"
+    resolution_note: "No build — behavior already shipped by merged PL-005: packages/stylist/src/run.ts:47-49 selects the StylePrompt WHERE isActive=true at runtime, so console prompt edits (PL-015 updateActivePrompt) flow into subsequently styled posts. Scope decision confirmed by owner 2026-06-26."
     priority: high
     business_value: 8
     complexity: S
